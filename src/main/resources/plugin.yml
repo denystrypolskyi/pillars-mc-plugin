@@ -1,0 +1,9 @@
+name: PillarsPlugin
+version: 1.0
+main: org.example.pillars.PillarsPlugin
+api-version: 1.21
+commands:
+  pillars:
+    description: Pillars main command
+    usage: /<command> <join|leave|forcestart|setparticle|reload|setparticleinterval|setparticlestep>
+    aliases: [p]
