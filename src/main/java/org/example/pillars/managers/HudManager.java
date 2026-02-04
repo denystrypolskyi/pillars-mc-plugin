@@ -74,6 +74,7 @@ public class HudManager {
     public void sendSpectatorTitle(Player player) {
         player.sendTitle("§cВы проиграли", "§7Вы выбыли из игры", FADE_IN, MEDIUM_STAY, FADE_OUT);
     }
+
     public void sendArenaNotFound(Player player) {
         player.sendMessage("§cАрена не найдена!");
     }
@@ -94,4 +95,13 @@ public class HudManager {
         player.sendMessage("§aИгра принудительно запущена!");
     }
 
+    public void sendNoWinnerTitle(Player player) {
+        player.sendTitle(
+                "§c§lНЕТ ПОБЕДИТЕЛЯ",
+                "§7Все игроки выбыли из игры",
+                FADE_IN,
+                LONG_STAY,
+                FADE_OUT
+        );
+    }
 }

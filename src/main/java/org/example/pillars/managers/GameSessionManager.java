@@ -25,9 +25,9 @@ public class GameSessionManager {
     }
 
     public GameSession getSessionByPlayer(Player player) {
-        for (GameSession gameSession : sessions.values()) {
-            if (gameSession.hasPlayer(player)) {
-                return gameSession;
+        for (GameSession session : sessions.values()) {
+            if (session.hasPlayer(player)) {
+                return session;
             }
         }
         return null;
@@ -36,20 +36,19 @@ public class GameSessionManager {
     public void joinSession(Player player, Arena arena) {
         GameSession current = getSessionByPlayer(player);
         if (current != null) {
-            current.removePlayer(player);
+            current.playerLeave(player);
         }
 
         GameSession target = getOrCreateSession(arena);
-        target.joinPlayer(player);
+        target.playerJoin(player);
     }
 
     public void leaveSession(Player player) {
-        GameSession gameSession = getSessionByPlayer(player);
-        if (gameSession != null) {
-            gameSession.removePlayer(player);
+
+        GameSession session = getSessionByPlayer(player);
+
+        if (session != null) {
+            session.playerLeave(player);
         }
     }
-
 }
-
-

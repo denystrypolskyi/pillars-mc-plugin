@@ -22,6 +22,7 @@ public class ArenaManager {
 
     public ArenaManager(PillarsPlugin plugin) {
         this.plugin = plugin;
+        loadArenas();
     }
 
     public Arena getArena(String worldName) {
@@ -103,7 +104,7 @@ public class ArenaManager {
         plugin.getLogger().info("Loaded " + arenas.size() + " arenas.");
     }
 
-    public void resetArenaAsync(Arena arena, Runnable callback) {
+    public void resetArena(Arena arena, Runnable callback) {
         String worldName = arena.getWorldName();
         World world = Bukkit.getWorld(worldName);
 

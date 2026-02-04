@@ -6,8 +6,8 @@ import org.example.pillars.listeners.SessionPlayerListener;
 import org.example.pillars.managers.*;
 
 public final class PillarsPlugin extends JavaPlugin {
-    // TODO duels/VIP rooms
-    // TODO GUI for choosing what arena to play on
+    // TODO add duels/VIP rooms
+    // TODO add GUI to select arena
 
     private ArenaManager arenaManager;
     private GameSessionManager gameSessionManager;
@@ -52,6 +52,7 @@ public final class PillarsPlugin extends JavaPlugin {
 
     @Override
     public void onEnable() {
+        // init managers
         this.arenaManager = new ArenaManager(this);
         this.gameSessionManager = new GameSessionManager(this);
         this.hudManager = new HudManager();
@@ -61,13 +62,15 @@ public final class PillarsPlugin extends JavaPlugin {
         this.playerManager = new PlayerManager();
         this.soundManager = new SoundManager();
 
-        this.arenaManager.loadArenas();
 
+        // register listeners
         getServer().getPluginManager().registerEvents(
                 new SessionPlayerListener(this),
                 this
         );
 
+
+        // register commands
         getCommand("p").setExecutor(
                 new PillarsCommand(this.arenaManager, this.gameSessionManager, this.hudManager)
         );

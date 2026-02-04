@@ -48,6 +48,13 @@ public class PillarsCommand implements CommandExecutor {
             }
 
             case "leave" -> {
+                GameSession session = gameSessionManager.getSessionByPlayer(player);
+
+                if (session == null) {
+                    hudManager.sendNotInGame(player);
+                    return true;
+                }
+
                 gameSessionManager.leaveSession(player);
                 hudManager.sendLeftArena(player);
             }
@@ -65,7 +72,7 @@ public class PillarsCommand implements CommandExecutor {
                     return true;
                 }
 
-                session.startCountdown();
+                session.forceStart();
                 hudManager.sendForceStartSuccess(player);
             }
         }
