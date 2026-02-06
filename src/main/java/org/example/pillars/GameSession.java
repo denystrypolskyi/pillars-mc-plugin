@@ -2,6 +2,8 @@ package org.example.pillars;
 
 import org.bukkit.*;
 import org.bukkit.entity.Player;
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitTask;
 import org.example.pillars.entities.Arena;
 import org.example.pillars.entities.PlayerRecord;
@@ -19,8 +21,12 @@ public class GameSession {
     private final Map<UUID, Location> frozenPlayers = new HashMap<>();
     private final Map<UUID, UUID> lastDamagerMap = new HashMap<>();
 
-    private BukkitTask countdownTask;
-    private BukkitTask itemGivingTask;
+    private BukkitTask beginGameCountdownTask;
+    private BukkitTask itemDistributionTask;
+    private BukkitTask witherCountdownTask;
+    private BukkitTask witherEffectTask;
+
+    private final Map<UUID, BukkitTask> endGameCountdownTasks = new HashMap<>();
 
     private GameState state = GameState.WAITING;
 
@@ -29,13 +35,6 @@ public class GameSession {
 
     private static final int MIN_PLAYERS = 2;
 
-    public Arena getArena() {
-        return arena;
-    }
-
-    public GameState getState() {
-        return state;
-    }
 
     public GameSession(Arena arena, PillarsPlugin pillarsPlugin) {
         this.arena = arena;
@@ -43,7 +42,6 @@ public class GameSession {
     }
 
     public void playerJoin(Player player) {
-
         if (!canJoin()) {
             pillarsPlugin.getHudManager().sendGameAlreadyStartedTitle(player);
             return;
@@ -54,65 +52,70 @@ public class GameSession {
         teleportToSpawn(player);
 
         updateScoreboards();
-        tryStartCountdown();
+        startBeginGameCountdown();
     }
 
     public void playerLeave(Player player) {
-
         UUID uuid = player.getUniqueId();
 
-        boolean wasActive = activePlayers.remove(uuid);
-        spectators.remove(uuid);
+        BukkitTask task = endGameCountdownTasks.remove(uuid);
+        if (task != null) task.cancel();
 
         cleanupArenaSpawnPoint(frozenPlayers.remove(uuid));
+
+        activePlayers.remove(uuid);
+        spectators.remove(uuid);
         lastDamagerMap.remove(uuid);
 
-        teleportToLobby(player);
+        resetSinglePlayer(player);
 
-        if (wasActive) {
+        if (state == GameState.RUNNING) {
             evaluateGameEnd();
         }
-
-        if (shouldResetGame()) {
-            resetGame();
-        }
-    }
-
-    public void playerDeath(Player dead, Player killer) {
-        if (!activePlayers.contains(dead.getUniqueId())) return;
-
-        rewardKiller(killer);
-
-        moveToSpectator(dead);
-
-        pillarsPlugin.getSoundManager().playLoseSound(dead);
-
-        evaluateGameEnd();
     }
 
     public void playerDisconnect(Player player) {
         UUID uuid = player.getUniqueId();
 
+        BukkitTask task = endGameCountdownTasks.remove(uuid);
+        if (task != null) task.cancel();
+
         if (!activePlayers.contains(uuid) && !spectators.contains(uuid)) return;
 
         boolean wasActive = activePlayers.contains(uuid);
 
-        removeFromSession(player);
+        removePlayerFromSession(player);
 
         if (state == GameState.RUNNING && wasActive) {
             evaluateGameEnd();
         }
     }
 
-    private void removeFromSession(Player player) {
+    public void playerDeath(Player dead, Player killer) {
+        UUID uuid = dead.getUniqueId();
+        if (!activePlayers.contains(uuid)) return;
+
+        BukkitTask endGameCountdownTask = endGameCountdownTasks.remove(uuid);
+        if (endGameCountdownTask != null) {
+            endGameCountdownTask.cancel();
+        }
+
+        rewardKiller(killer);
+
+        setPlayerAsSpectator(dead);
+
+        pillarsPlugin.getSoundManager().playLoseSound(dead);
+
+        evaluateGameEnd();
+    }
+
+    private void removePlayerFromSession(Player player) {
         UUID uuid = player.getUniqueId();
 
         activePlayers.remove(uuid);
         spectators.remove(uuid);
 
-        pillarsPlugin.getTeleportManager().teleportToLobby(player);
-        pillarsPlugin.getPlayerManager().resetPlayerState(player);
-        pillarsPlugin.getHudManager().resetScoreboard(player);
+        resetSinglePlayer(player);
     }
 
     public void forceStart() {
@@ -122,43 +125,42 @@ public class GameSession {
 
         forceStart = true;
 
-        if (countdownTask == null) {
-            startCountdownTask();
-        }
-    }
-
-    private void tryStartCountdown() {
-
-        if (state != GameState.WAITING) return;
-
-        if ((activePlayers.size() >= MIN_PLAYERS || forceStart) && countdownTask == null) {
-            startCountdownTask();
+        if (beginGameCountdownTask == null) {
+            startBeginGameCountdown();
         }
     }
 
     private void handleGameEnd(Player winner) {
         if (state == GameState.ENDING || state == GameState.RESETTING) return;
 
-        stopWorldBorder();
-        cancelItemGivingTask();
-        cancelCountdown();
-
+        stopSessionTasks();
         state = GameState.ENDING;
 
         Set<UUID> allPlayersSnapshot = new HashSet<>(activePlayers);
         allPlayersSnapshot.addAll(spectators);
 
+        for (UUID uuid : new ArrayList<>(activePlayers)) {
+            Player player = Bukkit.getPlayer(uuid);
+            if (player != null) {
+                player.setGameMode(GameMode.SPECTATOR);
+                player.teleport(arena.getSpectatorCenter());
+                pillarsPlugin.getHudManager().sendSpectatorTitle(player);
+            }
+            spectators.add(uuid);
+        }
+        activePlayers.clear();
+
         if (winner != null) {
             pillarsPlugin.getStatsManager().incrementWins(winner.getUniqueId());
-            PlayerRecord winnerStats = pillarsPlugin.getStatsManager().getStats(winner.getUniqueId());
+            PlayerRecord stats = pillarsPlugin.getStatsManager().getStats(winner.getUniqueId());
 
             pillarsPlugin.getHudManager().updateScoreboard(
                     winner,
-                    getActivePlayers().size(),
-                    getArena().getSpawnPoints().size(),
-                    getArena().getDisplayName(),
-                    winnerStats.getKills(),
-                    winnerStats.getWins()
+                    0,
+                    arena.getSpawnPoints().size(),
+                    arena.getDisplayName(),
+                    stats.getKills(),
+                    stats.getWins()
             );
 
             for (UUID uuid : allPlayersSnapshot) {
@@ -181,37 +183,58 @@ public class GameSession {
         Bukkit.getScheduler().runTaskLater(pillarsPlugin, () -> {
             for (UUID uuid : allPlayersSnapshot) {
                 Player player = Bukkit.getPlayer(uuid);
-                if (player != null) {
-                    startReturnToLobbyWithTitleTask(player, 5);
-                }
+                if (player != null) startEndGameCountdown(player, 5);
+            }
+        }, 40L); // 40 ticks = 2 seconds
+
+        Bukkit.getScheduler().runTaskLater(pillarsPlugin, this::resetGame, 160L);
+        // 160 ticks = 8 seconds
+    }
+
+    public void startEndGameCountdown(Player player, int seconds) {
+        final int[] timeLeft = {seconds};
+
+        BukkitTask task = Bukkit.getScheduler().runTaskTimer(pillarsPlugin, () -> {
+            if (!player.isOnline()) {
+                BukkitTask t = endGameCountdownTasks.remove(player.getUniqueId());
+                if (t != null) t.cancel();
+                spectators.remove(player.getUniqueId());
+                return;
             }
 
-            Bukkit.getScheduler().runTaskLater(pillarsPlugin, this::resetGame, 120L);
-        }, 60L);
+            if (timeLeft[0] > 0) {
+                pillarsPlugin.getHudManager().sendReturnToLobbyTitle(player, timeLeft[0]);
+                timeLeft[0]--;
+            } else {
+                player.setGameMode(GameMode.SURVIVAL);
+                pillarsPlugin.getTeleportManager().teleportToLobby(player);
+                pillarsPlugin.getPlayerManager().resetPlayerState(player);
+                pillarsPlugin.getHudManager().resetScoreboard(player);
+
+                spectators.remove(player.getUniqueId());
+
+                BukkitTask t = endGameCountdownTasks.remove(player.getUniqueId());
+                if (t != null) t.cancel();
+            }
+        }, 0L, 20L);
+
+        endGameCountdownTasks.put(player.getUniqueId(), task);
     }
+
 
     private void evaluateGameEnd() {
-
         if (state != GameState.RUNNING) return;
 
-        if (activePlayers.size() > 1) return;
+        if (activePlayers.isEmpty()) {
+            handleGameEnd(null);
+            return;
+        }
 
-        Player winner = activePlayers.isEmpty()
-                ? null
-                : Bukkit.getPlayer(activePlayers.get(0));
-
-        handleGameEnd(winner);
+        if (activePlayers.size() == 1) {
+            Player winner = Bukkit.getPlayer(activePlayers.getFirst());
+            handleGameEnd(winner);
+        }
     }
-
-
-    private void teleportToLobby(Player player) {
-        if (!player.isOnline()) return;
-
-        pillarsPlugin.getTeleportManager().teleportToLobby(player);
-        pillarsPlugin.getPlayerManager().resetPlayerState(player);
-        pillarsPlugin.getHudManager().resetScoreboard(player);
-    }
-
 
     private void rewardKiller(Player killer) {
 
@@ -220,11 +243,10 @@ public class GameSession {
         pillarsPlugin.getStatsManager()
                 .incrementKills(killer.getUniqueId());
 
-        updateScoreboardFor(killer);
+        updatePlayerScoreboard(killer);
     }
 
-    private void moveToSpectator(Player player) {
-
+    private void setPlayerAsSpectator(Player player) {
         UUID uuid = player.getUniqueId();
 
         activePlayers.remove(uuid);
@@ -271,31 +293,27 @@ public class GameSession {
 
     private void resetSession() {
         stopSessionTasks();
-        resetPlayers(); // TODO reset players before they get teleported back to the lobby
         clearSessionState();
     }
 
-
-    private void resetPlayers() {
-        for (UUID uuid : getAllPlayers()) {
-            Player player = Bukkit.getPlayer(uuid);
-            if (player == null) continue;
-
-            resetSinglePlayer(player);
-        }
-    }
 
     private void clearSessionState() {
         frozenPlayers.clear();
         activePlayers.clear();
         spectators.clear();
         lastDamagerMap.clear();
+        endGameCountdownTasks.clear();
         forceStart = false;
     }
 
     private void stopSessionTasks() {
-        cancelCountdown();
-        cancelItemGivingTask();
+        cancelBeginGameCountdownTask();
+        cancelItemDistributionTask();
+        cancelWitherTask();
+        cancelFinalZoneTask();
+
+        cancelEndGameCountdownTasks();
+
         stopWorldBorder();
     }
 
@@ -309,12 +327,12 @@ public class GameSession {
         for (UUID uuid : getAllPlayers()) {
             Player player = Bukkit.getPlayer(uuid);
             if (player != null) {
-                updateScoreboardFor(player);
+                updatePlayerScoreboard(player);
             }
         }
     }
 
-    private void updateScoreboardFor(Player player) {
+    private void updatePlayerScoreboard(Player player) {
 
         PlayerRecord stats =
                 pillarsPlugin.getStatsManager().getStats(player.getUniqueId());
@@ -327,28 +345,6 @@ public class GameSession {
                 stats.getKills(),
                 stats.getWins()
         );
-    }
-
-    private boolean canJoin() {
-        return state != GameState.RUNNING && state != GameState.RESETTING;
-    }
-
-    private boolean shouldResetGame() {
-        return activePlayers.isEmpty() && state != GameState.RUNNING;
-    }
-
-    private void preparePlayer(Player player) {
-        pillarsPlugin.getPlayerManager().resetPlayerState(player);
-    }
-
-    private void prepareArenaSpawnPoint(Location spawn) {
-        if (spawn != null) spawn.getBlock().setType(Material.BEDROCK);
-    }
-
-    private void cleanupArenaSpawnPoint(Location spawn) {
-        if (spawn != null && spawn.getBlock().getType() == Material.BEDROCK) {
-            spawn.getBlock().setType(Material.AIR);
-        }
     }
 
     private Location getFarthestSpawn() {
@@ -384,6 +380,24 @@ public class GameSession {
         }
 
         return bestSpawn;
+    }
+
+    private boolean canJoin() {
+        return state != GameState.RUNNING && state != GameState.RESETTING && state != GameState.ENDING;
+    }
+
+    private void preparePlayer(Player player) {
+        pillarsPlugin.getPlayerManager().resetPlayerState(player);
+    }
+
+    private void prepareArenaSpawnPoint(Location spawn) {
+        if (spawn != null) spawn.getBlock().setType(Material.BEDROCK);
+    }
+
+    private void cleanupArenaSpawnPoint(Location spawn) {
+        if (spawn != null && spawn.getBlock().getType() == Material.BEDROCK) {
+            spawn.getBlock().setType(Material.AIR);
+        }
     }
 
     public List<Player> getActivePlayers() {
@@ -425,14 +439,29 @@ public class GameSession {
         return lastDamagerMap.get(victim);
     }
 
-    public void startCountdownTask() {
-        if (countdownTask != null) return;
+    public Arena getArena() {
+        return arena;
+    }
 
+    public GameState getState() {
+        return state;
+    }
+
+    public void startBeginGameCountdown() {
+        if (state != GameState.WAITING) return;
+        if ((activePlayers.size() < MIN_PLAYERS && !forceStart) || beginGameCountdownTask != null) return;
+
+        state = GameState.STARTING;
         final int[] counter = {5};
 
-        countdownTask = Bukkit.getScheduler().runTaskTimer(pillarsPlugin, () -> {
+        beginGameCountdownTask = Bukkit.getScheduler().runTaskTimer(pillarsPlugin, () -> {
+            if (activePlayers.isEmpty()) {
+                cancelBeginGameCountdownTask();
+                return;
+            }
+
             if (!forceStart && activePlayers.size() < MIN_PLAYERS) {
-                cancelCountdown();
+                cancelBeginGameCountdownTask();
 
                 for (UUID uuid : activePlayers) {
                     Player player = Bukkit.getPlayer(uuid);
@@ -456,29 +485,26 @@ public class GameSession {
             if (counter[0] < 0) {
                 state = GameState.RUNNING;
                 frozenPlayers.clear();
-                cancelCountdown();
+                cancelBeginGameCountdownTask();
 
-                for (UUID uuid : activePlayers) {
-                    Player player = Bukkit.getPlayer(uuid);
-                    if (player != null) {
-                        pillarsPlugin.getHudManager().sendGameStartTitle(player);
-                        pillarsPlugin.getSoundManager().playGameStartSound(player);
-                    }
+                for (Player player : getActivePlayers()) {
+                    pillarsPlugin.getHudManager().sendGameStartTitle(player);
+                    pillarsPlugin.getSoundManager().playGameStartSound(player);
                 }
 
-                startItemGivingTask();
+                startItemDistributionTask();
                 startWorldBorder();
             }
         }, 0L, 20L);
     }
 
-    private void startItemGivingTask() {
-        if (itemGivingTask != null) return;
+    private void startItemDistributionTask() {
+        if (itemDistributionTask != null) return;
 
         final int interval = getArena().getItemCooldownSeconds();
         final int[] counter = {interval};
 
-        itemGivingTask = Bukkit.getScheduler().runTaskTimer(pillarsPlugin, () -> {
+        itemDistributionTask = Bukkit.getScheduler().runTaskTimer(pillarsPlugin, () -> {
             for (UUID uuid : activePlayers) {
                 Player player = Bukkit.getPlayer(uuid);
                 if (player != null) {
@@ -501,28 +527,67 @@ public class GameSession {
         }, 0L, 20L);
     }
 
-    private void startReturnToLobbyWithTitleTask(Player player, int seconds) {
-        final int[] timeLeft = {seconds};
 
-        BukkitTask[] taskHolder = new BukkitTask[1];
+    private void startWitherCountdown() {
+        if (state != GameState.RUNNING) return;
 
-        taskHolder[0] = Bukkit.getScheduler().runTaskTimer(pillarsPlugin, () -> {
-            if (timeLeft[0] > 0) {
-                pillarsPlugin.getHudManager().sendReturnToLobbyTitle(player, timeLeft[0]);
-                timeLeft[0]--;
-            } else {
-                pillarsPlugin.getTeleportManager().teleportToLobby(player);
+        final int countdownSeconds = 5;
+        final int[] counter = {countdownSeconds};
 
-                if (taskHolder[0] != null) {
-                    taskHolder[0].cancel();
-                }
+        witherCountdownTask = Bukkit.getScheduler().runTaskTimer(pillarsPlugin, () -> {
+
+            if (activePlayers.isEmpty()) {
+                cancelFinalZoneTask();
+                return;
             }
+
+            for (Player player : getActivePlayers()) {
+                pillarsPlugin.getHudManager().sendWitherCountdownTitle(player, counter[0]);
+                pillarsPlugin.getSoundManager().playCountdownTickSound(player);
+            }
+
+            counter[0]--;
+
+            if (counter[0] < 0) {
+                cancelFinalZoneTask();
+                for (Player player : getActivePlayers()) {
+                    pillarsPlugin.getHudManager().sendWitherStartTitle(player);
+                    pillarsPlugin.getSoundManager().playWitherStartSound(player);
+
+                }
+                startWitherTask();
+            }
+
         }, 0L, 20L);
+    }
+
+    private void startWitherTask() {
+        if (state != GameState.RUNNING) return;
+
+        witherEffectTask = Bukkit.getScheduler().runTaskTimer(pillarsPlugin, () -> {
+
+            if (activePlayers.isEmpty()) {
+                cancelWitherTask();
+                return;
+            }
+
+            for (Player player : getActivePlayers()) {
+
+                player.addPotionEffect(new PotionEffect(
+                        PotionEffectType.WITHER,
+                        40, // 2 seconds
+                        1,
+                        false,
+                        true
+                ));
+            }
+
+        }, 0L, 40L);
     }
 
     public void startWorldBorder() {
         if (arena.getSpawnPoints().isEmpty()) return;
-        World world = arena.getSpawnPoints().get(0).getWorld();
+        World world = arena.getSpawnPoints().getFirst().getWorld();
         if (world == null) return;
 
         Location center = arena.getCenter();
@@ -543,28 +608,58 @@ public class GameSession {
         border.setWarningDistance(0);
         border.setWarningTime(0);
 
-        double minSize = 4 * 2;
-        long shrinkTimeSeconds = 180;
+        double minSize = 1;
+        long shrinkTimeSeconds = 300;
         border.setSize(minSize, shrinkTimeSeconds);
+
+        Bukkit.getScheduler().runTaskLater(
+                pillarsPlugin,
+                this::startWitherCountdown,
+                shrinkTimeSeconds * 20L
+        );
     }
 
-    private void cancelCountdown() {
-        if (countdownTask != null) {
-            countdownTask.cancel();
-            countdownTask = null;
+    private void cancelEndGameCountdownTasks() {
+        for (BukkitTask task : endGameCountdownTasks.values()) {
+            if (task != null) task.cancel();
+        }
+
+        endGameCountdownTasks.clear();
+    }
+
+
+    private void cancelWitherTask() {
+        if (witherEffectTask != null) {
+            witherEffectTask.cancel();
+            witherEffectTask = null;
         }
     }
 
-    private void cancelItemGivingTask() {
-        if (itemGivingTask != null) {
-            itemGivingTask.cancel();
-            itemGivingTask = null;
+    private void cancelFinalZoneTask() {
+        if (witherCountdownTask != null) {
+            witherCountdownTask.cancel();
+            witherCountdownTask = null;
+        }
+    }
+
+
+    private void cancelBeginGameCountdownTask() {
+        if (beginGameCountdownTask != null) {
+            beginGameCountdownTask.cancel();
+            beginGameCountdownTask = null;
+        }
+    }
+
+    private void cancelItemDistributionTask() {
+        if (itemDistributionTask != null) {
+            itemDistributionTask.cancel();
+            itemDistributionTask = null;
         }
     }
 
     private void stopWorldBorder() {
         if (!arena.getSpawnPoints().isEmpty()) {
-            World world = arena.getSpawnPoints().get(0).getWorld();
+            World world = arena.getSpawnPoints().getFirst().getWorld();
             if (world != null) {
                 WorldBorder border = world.getWorldBorder();
                 border.setSize(1000);

@@ -104,4 +104,24 @@ public class HudManager {
                 FADE_OUT
         );
     }
+
+    public void sendWitherCountdownTitle(Player player, int secondsLeft) {
+        player.sendTitle(
+                "§c§lФИНАЛЬНАЯ ЗОНА",
+                "§7Отравление через §e§l" + secondsLeft + " §7сек.",
+                FADE_IN,
+                MEDIUM_STAY,
+                FADE_OUT
+        );
+    }
+
+    public void sendWitherStartTitle(Player player) {
+        player.sendTitle(
+                "§5§lВНИМАНИЕ!",
+                "§cФаза Wither началась!",
+                FADE_IN,
+                LONG_STAY,
+                FADE_OUT
+        );
+    }
 }

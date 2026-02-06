@@ -70,4 +70,8 @@ public class SoundManager {
                 0.6f
         );
     }
+
+    public void playWitherStartSound(Player player) {
+        player.playSound(player.getLocation(), Sound.ENTITY_WITHER_SPAWN, 1.0f, 1.0f);
+    }
 }
