@@ -69,10 +69,18 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
                 "toggle_joining"
         ));
 
-        inventory.setItem(9, actionItem(Material.RED_DYE, translations.text("menus.arena-settings.players-start-decrease"), List.of(
-                translations.text("menus.arena-settings.minimum-one"),
-                translations.text("menus.arena-settings.starts-at-lore")
-        ), "min:-1"));
+        boolean minimumPlayersReached = arena.getMinPlayers() <= ArenaManager.MIN_PLAYERS_TO_START;
+        inventory.setItem(9, actionItem(
+                minimumPlayersReached ? Material.GRAY_DYE : Material.RED_DYE,
+                translations.text(minimumPlayersReached
+                        ? "menus.arena-settings.players-start-minimum"
+                        : "menus.arena-settings.players-start-decrease"),
+                List.of(
+                        translations.text("menus.arena-settings.minimum-two"),
+                        translations.text("menus.arena-settings.starts-at-lore")
+                ),
+                minimumPlayersReached ? "minimum_reached" : "min:-1"
+        ));
         inventory.setItem(10, displayItem(
                 Material.PLAYER_HEAD,
                 translations.text("menus.arena-settings.players-to-start"),

@@ -6,10 +6,10 @@ import org.bukkit.permissions.Permission;
 import org.example.pillars.command.PillarsCommand;
 import org.example.pillars.listeners.GameSessionPlayerListener;
 import org.example.pillars.listeners.GuiListener;
+import org.example.pillars.listeners.LobbyListener;
 import org.example.pillars.managers.*;
 
 public final class PillarsPlugin extends JavaPlugin {
-    // TODO add persistent player stats (gui/leaderboards)
     @Override
     public void onEnable() {
         saveDefaultConfig();
@@ -24,7 +24,7 @@ public final class PillarsPlugin extends JavaPlugin {
         ArenaManager arenaManager = new ArenaManager(this, translationManager);
         StatsManager statsManager = new StatsManager(this, translationManager);
 
-        PlayerManager playerManager = new PlayerManager(teleportManager, hudManager);
+        PlayerManager playerManager = new PlayerManager(this, teleportManager, hudManager);
 
         GameSessionManager gameSessionManager = new GameSessionManager(
                 this,
@@ -44,6 +44,10 @@ public final class PillarsPlugin extends JavaPlugin {
         );
 
         getServer().getPluginManager().registerEvents(new GuiListener(), this);
+        getServer().getPluginManager().registerEvents(
+                new LobbyListener(this, arenaManager, gameSessionManager, hudManager, itemManager, playerManager),
+                this
+        );
 
         PluginCommand pillarsCommand = getCommand("pillars");
         if (pillarsCommand == null) {

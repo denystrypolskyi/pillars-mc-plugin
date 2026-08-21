@@ -29,8 +29,8 @@ arenas:
       - [6, 100, -6]
       - [6, 100, 6]
     displayName:
-      en: "Arena 4 #1"
-      ru: "Арена 4 №1"
+      en: "arena 4 #1"
+      ru: "арена 4 №1"
     joiningOpen: true
     minPlayers: 2
     itemCooldownSeconds: 5
@@ -43,8 +43,8 @@ arenas:
       - [0, 100, -6]
       - [0, 100, 6]
     displayName:
-      en: "Arena 4 #2"
-      ru: "Арена 4 №2"
+      en: "arena 4 #2"
+      ru: "арена 4 №2"
     joiningOpen: true
     minPlayers: 2
     itemCooldownSeconds: 5
@@ -57,8 +57,8 @@ arenas:
       - [-6, 100, 6]
       - [6, 100, 6]
     displayName:
-      en: "Arena 4 #3"
-      ru: "Арена 4 №3"
+      en: "arena 4 #3"
+      ru: "арена 4 №3"
     joiningOpen: true
     minPlayers: 2
     itemCooldownSeconds: 5
@@ -76,8 +76,8 @@ arenas:
       - [0, 100, -14]
       - [9.9, 100, -9.9]
     displayName:
-      en: "Arena 8 #1"
-      ru: "Арена 8 №1"
+      en: "arena 8 #1"
+      ru: "арена 8 №1"
     joiningOpen: true
     minPlayers: 4
     itemCooldownSeconds: 3
@@ -94,8 +94,8 @@ arenas:
       - [-9.9, 100, -9.9]
       - [9.9, 100, -9.9]
     displayName:
-      en: "Arena 8 #2"
-      ru: "Арена 8 №2"
+      en: "arena 8 #2"
+      ru: "арена 8 №2"
     joiningOpen: true
     minPlayers: 4
     itemCooldownSeconds: 3
@@ -112,8 +112,8 @@ arenas:
       - [-9.9, 100, 9.9]
       - [-9.9, 100, -9.9]
     displayName:
-      en: "Arena 8 #3"
-      ru: "Арена 8 №3"
+      en: "arena 8 #3"
+      ru: "арена 8 №3"
     joiningOpen: true
     minPlayers: 4
     itemCooldownSeconds: 3
@@ -135,8 +135,8 @@ arenas:
       - [9.0, 100, -15.59]
       - [15.59, 100, -9.0]
     displayName:
-      en: "Arena 12 #1"
-      ru: "Арена 12 №1"
+      en: "arena 12 #1"
+      ru: "арена 12 №1"
     joiningOpen: true
     minPlayers: 6
     itemCooldownSeconds: 3
@@ -157,8 +157,8 @@ arenas:
       - [9.0, 100, -15.59]
       - [15.59, 100, -9.0]
     displayName:
-      en: "Arena 12 #2"
-      ru: "Арена 12 №2"
+      en: "arena 12 #2"
+      ru: "арена 12 №2"
     joiningOpen: true
     minPlayers: 6
     itemCooldownSeconds: 3
@@ -179,8 +179,8 @@ arenas:
       - [9.0, 100, -15.59]
       - [15.59, 100, -9.0]
     displayName:
-      en: "Arena 12 #3"
-      ru: "Арена 12 №3"
+      en: "arena 12 #3"
+      ru: "арена 12 №3"
     joiningOpen: true
     minPlayers: 6
     itemCooldownSeconds: 3

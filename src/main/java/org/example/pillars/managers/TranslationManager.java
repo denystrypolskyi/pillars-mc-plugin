@@ -17,6 +17,11 @@ import java.util.Set;
 public final class TranslationManager {
     private static final String DEFAULT_LANGUAGE = "en";
     private static final Set<String> SUPPORTED_LANGUAGES = Set.of("en", "ru");
+    private static final Set<String> PLAYER_FACING_SECTIONS = Set.of(
+            "plugin", "welcome-v2", "welcome-v3", "lobby-items", "admin-item", "game-items",
+            "scoreboard", "titles", "action-bar", "messages", "rarities", "units",
+            "arena-view", "menus"
+    );
 
     private final JavaPlugin plugin;
     private final String language;
@@ -71,7 +76,7 @@ public final class TranslationManager {
             return key;
         }
 
-        return format(value, placeholders);
+        return format(styleTemplate(key, value), placeholders);
     }
 
     public List<String> list(String key, Object... placeholders) {
@@ -91,7 +96,7 @@ public final class TranslationManager {
         }
 
         return values.stream()
-                .map(value -> format(value, placeholders))
+                .map(value -> format(styleTemplate(key, value), placeholders))
                 .toList();
     }
 
@@ -125,6 +130,23 @@ public final class TranslationManager {
             );
         }
         return ChatColor.translateAlternateColorCodes('&', formatted);
+    }
+
+    private String styleTemplate(String key, String value) {
+        String section = key.contains(".") ? key.substring(0, key.indexOf('.')) : key;
+        if (!PLAYER_FACING_SECTIONS.contains(section)) {
+            return value;
+        }
+
+        if (key.equals("scoreboard.title")) {
+            return "&6&l◆";
+        }
+
+        return value
+                .replaceAll("(?i)&6&lpillars &8»\\s*", "&8› ")
+                .replaceAll("(?i)/pillars\\b", "/p")
+                .replaceAll("(?i)(?<!/)\\bpillars\\s*", "")
+                .toLowerCase(Locale.ROOT);
     }
 
     private void saveLanguageFile(String languageCode) {

@@ -13,13 +13,15 @@ import org.example.pillars.managers.*;
 import java.util.*;
 
 public class GameSession {
+    private static final long DAMAGE_CREDIT_MILLIS = 10_000L;
+
     private final Arena arena;
 
     private final Set<UUID> activePlayers = new HashSet<>();
     private final Set<UUID> spectators = new HashSet<>();
     private final Set<UUID> adminSpectators = new HashSet<>();
     private final Map<UUID, Location> frozenPlayers = new HashMap<>();
-    private final Map<UUID, UUID> lastDamagerMap = new HashMap<>();
+    private final Map<UUID, DamageCredit> lastDamagerMap = new HashMap<>();
     private final Map<UUID, Location> occupiedSpawns = new HashMap<>();
     private final Map<UUID, Location> adminSpectatorPreviousLocations = new HashMap<>();
     private final Map<UUID, GameMode> adminSpectatorPreviousGameModes = new HashMap<>();
@@ -127,7 +129,12 @@ public class GameSession {
             return;
         }
         addActivePlayer(player);
-        hudManager.sendPlayerJoinedArena(getAllPlayerIds(), player, arena.getDisplayName(), activePlayers.size(), arena.getSpawnPoints().size());
+        if (state == GameState.WAITING) {
+            playerManager.giveLeaveArenaItem(player);
+            playerManager.giveForceStartItem(player);
+            playerManager.giveAdminMenuItem(player);
+        }
+        hudManager.broadcastPlayerJoinedArena(player, arena.getDisplayName(), activePlayers.size(), arena.getSpawnPoints().size());
 
         updateArenaHudForAllPlayers();
 
@@ -170,8 +177,10 @@ public class GameSession {
             spawnManager.cleanupSpawn(spawn, spawnPillarHeightBlocks);
 
             if (state == GameState.STARTING && activePlayers.size() < getMinPlayers()) {
+                cancelBeginGameCountdownTask();
                 state = GameState.WAITING;
                 forceStart = false;
+                giveWaitingItems();
                 updateArenaHudForAllPlayers();
                 startWaitingForPlayersTask();
             }
@@ -222,6 +231,10 @@ public class GameSession {
 
 
     public void playerDeath(Player dead, Player killer) {
+        playerDeath(dead, killer, false);
+    }
+
+    public void playerDeath(Player dead, Player killer, boolean fellIntoVoid) {
         UUID uuid = dead.getUniqueId();
         if (!activePlayers.contains(uuid)) return;
 
@@ -231,6 +244,7 @@ public class GameSession {
         }
 
         rewardKiller(killer);
+        hudManager.broadcastElimination(dead, killer, arena.getDisplayName(), fellIntoVoid);
 
         setPlayerAsSpectator(dead);
 
@@ -288,6 +302,7 @@ public class GameSession {
                 }
             }
         } else {
+            hudManager.broadcastNoWinner(arena.getDisplayName());
             for (UUID uuid : allPlayersSnapshot) {
                 Player player = Bukkit.getPlayer(uuid);
                 if (player != null) {
@@ -382,6 +397,7 @@ public class GameSession {
         frozenPlayers.remove(uuid);
         lastDamagerMap.remove(uuid);
 
+        playerManager.prepareSpectatorInventory(player);
         player.setGameMode(GameMode.SPECTATOR);
         player.teleport(arena.getSpectatorCenter());
 
@@ -493,6 +509,11 @@ public class GameSession {
         return getAllPlayerIds().contains(player.getUniqueId());
     }
 
+    public boolean isParticipant(Player player) {
+        UUID uuid = player.getUniqueId();
+        return activePlayers.contains(uuid) || spectators.contains(uuid);
+    }
+
     public boolean isPlayerFrozen(Player player) {
         return frozenPlayers.containsKey(player.getUniqueId());
     }
@@ -502,12 +523,23 @@ public class GameSession {
     }
 
     public void setLastDamager(UUID victim, UUID damager) {
-        lastDamagerMap.put(victim, damager);
+        lastDamagerMap.put(victim, new DamageCredit(
+                damager,
+                System.currentTimeMillis() + DAMAGE_CREDIT_MILLIS
+        ));
     }
 
     public UUID getLastDamager(UUID victim) {
-        return lastDamagerMap.get(victim);
+        DamageCredit credit = lastDamagerMap.get(victim);
+        if (credit == null) return null;
+        if (System.currentTimeMillis() > credit.expiresAt()) {
+            lastDamagerMap.remove(victim);
+            return null;
+        }
+        return credit.damager();
     }
+
+    private record DamageCredit(UUID damager, long expiresAt) {}
 
     public Arena getArena() {
         return arena;
@@ -536,6 +568,7 @@ public class GameSession {
         if ((activePlayers.size() < getMinPlayers() && !forceStart) || beginGameCountdownTask != null) return;
 
         state = GameState.STARTING;
+        removeWaitingItems();
         cancelWaitingForPlayersTask();
         updateArenaHudForAllPlayers();
         final int[] counter = {beginCountdownSeconds};
@@ -549,6 +582,7 @@ public class GameSession {
             if (!forceStart && activePlayers.size() < getMinPlayers()) {
                 cancelBeginGameCountdownTask();
                 state = GameState.WAITING;
+                giveWaitingItems();
                 updateArenaHudForAllPlayers();
                 startWaitingForPlayersTask();
                 for (UUID uuid : activePlayers) {
@@ -645,8 +679,30 @@ public class GameSession {
         }, 0L, 20L);
     }
 
+    private void giveWaitingItems() {
+        for (UUID uuid : activePlayers) {
+            Player player = Bukkit.getPlayer(uuid);
+            if (player != null) {
+                playerManager.giveLeaveArenaItem(player);
+                playerManager.giveForceStartItem(player);
+                playerManager.giveAdminMenuItem(player);
+            }
+        }
+    }
+
+    private void removeWaitingItems() {
+        for (UUID uuid : activePlayers) {
+            Player player = Bukkit.getPlayer(uuid);
+            if (player != null) {
+                playerManager.removeLeaveArenaItem(player);
+                playerManager.removeForceStartItem(player);
+                playerManager.removeAdminMenuItem(player);
+            }
+        }
+    }
+
     private int getMinPlayers() {
-        return Math.max(1, arena.getMinPlayers());
+        return Math.max(ArenaManager.MIN_PLAYERS_TO_START, arena.getMinPlayers());
     }
 
     private void restoreAdminSpectators() {

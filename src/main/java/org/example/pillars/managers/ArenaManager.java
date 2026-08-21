@@ -13,6 +13,7 @@ import java.nio.file.*;
 import java.util.*;
 
 public class ArenaManager {
+    public static final int MIN_PLAYERS_TO_START = 2;
 
     private final PillarsPlugin plugin;
     private final TranslationManager translations;
@@ -122,9 +123,17 @@ public class ArenaManager {
                 continue;
             }
 
+            if (spawns.size() < MIN_PLAYERS_TO_START) {
+                plugin.getLogger().severe(translations.text("logs.arena-too-small", "world", worldName));
+                continue;
+            }
+
             arena.setSpawnPoints(spawns);
-            int defaultMinPlayers = Math.max(1, (int) Math.ceil(spawns.size() / 2.0));
-            arena.setMinPlayers(Math.max(1, Math.min(spawns.size(), sec.getInt("minPlayers", defaultMinPlayers))));
+            int defaultMinPlayers = Math.max(MIN_PLAYERS_TO_START, (int) Math.ceil(spawns.size() / 2.0));
+            arena.setMinPlayers(Math.max(
+                    MIN_PLAYERS_TO_START,
+                    Math.min(spawns.size(), sec.getInt("minPlayers", defaultMinPlayers))
+            ));
             arenas.put(worldName, arena);
         }
 
@@ -248,11 +257,15 @@ public class ArenaManager {
     }
 
     public void updateSafeArenaSettings(Arena arena, int minPlayers, int itemCooldownSeconds) {
-        if (arena == null || arena.getSpawnPoints() == null || arena.getSpawnPoints().isEmpty()) {
+        if (arena == null || arena.getSpawnPoints() == null
+                || arena.getSpawnPoints().size() < MIN_PLAYERS_TO_START) {
             return;
         }
 
-        int clampedMinPlayers = Math.max(1, Math.min(arena.getSpawnPoints().size(), minPlayers));
+        int clampedMinPlayers = Math.max(
+                MIN_PLAYERS_TO_START,
+                Math.min(arena.getSpawnPoints().size(), minPlayers)
+        );
         int clampedItemCooldownSeconds = Math.max(1, itemCooldownSeconds);
 
         arena.setMinPlayers(clampedMinPlayers);
@@ -326,7 +339,7 @@ public class ArenaManager {
         if (localizedName == null || localizedName.isBlank()) {
             localizedName = section.getString("displayName", worldName);
         }
-        return localizedName;
+        return localizedName.toLowerCase(Locale.ROOT);
     }
 
 }

@@ -2,7 +2,9 @@ package org.example.pillars.listeners;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
@@ -65,9 +67,8 @@ public class GameSessionPlayerListener implements Listener {
                                  EntityDamageEvent event) {
 
         if (event instanceof EntityDamageByEntityEvent e) {
-
-            if (e.getDamager() instanceof Player damager &&
-                    session.hasPlayer(damager)) {
+            Player damager = resolveDamagingPlayer(e.getDamager());
+            if (damager != null && session.hasPlayer(damager)) {
 
                 return damager;
             }
@@ -109,7 +110,7 @@ public class GameSessionPlayerListener implements Listener {
                 killer = Bukkit.getPlayer(lastDamager);
             }
 
-            session.playerDeath(player, killer);
+            session.playerDeath(player, killer, true);
             return;
         }
 
@@ -132,7 +133,9 @@ public class GameSessionPlayerListener implements Listener {
     public void onPvP(EntityDamageByEntityEvent event) {
 
         if (!(event.getEntity() instanceof Player victim)) return;
-        if (!(event.getDamager() instanceof Player damager)) return;
+
+        Player damager = resolveDamagingPlayer(event.getDamager());
+        if (damager == null) return;
 
         GameSession session =
                 gameSessionManager.getSessionByPlayer(victim);
@@ -140,11 +143,22 @@ public class GameSessionPlayerListener implements Listener {
         if (session == null) return;
         if (session.getState() != GameState.RUNNING) return;
 
-        if (!session.hasPlayer(victim) || !session.hasPlayer(damager)) return;
+        if (!session.getActivePlayerIds().contains(victim.getUniqueId())
+                || !session.getActivePlayerIds().contains(damager.getUniqueId())) return;
 
         session.setLastDamager(
                 victim.getUniqueId(),
                 damager.getUniqueId()
         );
+    }
+
+    private Player resolveDamagingPlayer(Entity damager) {
+        if (damager instanceof Player player) {
+            return player;
+        }
+        if (damager instanceof Projectile projectile && projectile.getShooter() instanceof Player player) {
+            return player;
+        }
+        return null;
     }
 }

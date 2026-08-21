@@ -74,7 +74,7 @@ public class GameSessionManager {
     public void joinSession(Player player, Arena arena) {
         GameSession current = getSessionByPlayer(player);
         if (current != null) {
-            current.playerLeave(player);
+            leaveCurrentSession(player, current);
         }
 
         GameSession target = getOrCreateSession(arena);
@@ -84,7 +84,7 @@ public class GameSessionManager {
     public boolean spectateSession(Player player, Arena arena) {
         GameSession current = getSessionByPlayer(player);
         if (current != null) {
-            current.playerLeave(player);
+            leaveCurrentSession(player, current);
         }
 
         GameSession target = getSession(arena);
@@ -101,11 +101,27 @@ public class GameSessionManager {
     }
 
     public void leaveSession(Player player) {
-
         GameSession session = getSessionByPlayer(player);
+        if (session == null) {
+            playerManager.removeLeaveArenaItem(player);
+            hudManager.sendNotInGame(player);
+            return;
+        }
 
-        if (session != null) {
-            session.playerLeave(player);
+        boolean participant = session.isParticipant(player);
+        session.playerLeave(player);
+        if (participant) {
+            hudManager.broadcastPlayerLeftArena(player, session.getArena().getDisplayName());
+        } else {
+            hudManager.sendLeftArena(player);
+        }
+    }
+
+    private void leaveCurrentSession(Player player, GameSession session) {
+        boolean participant = session.isParticipant(player);
+        session.playerLeave(player);
+        if (participant) {
+            hudManager.broadcastPlayerLeftArena(player, session.getArena().getDisplayName());
         }
     }
 
@@ -183,5 +199,28 @@ public class GameSessionManager {
         return arena.isJoiningOpen()
                 && session.getState() == GameState.WAITING
                 && session.getActivePlayerIds().size() < arena.getSpawnPoints().size();
+    }
+
+    public void forceStartSession(Player player) {
+        if (!player.hasPermission("pillars.forcestart")) {
+            playerManager.removeForceStartItem(player);
+            hudManager.sendNoPermission(player);
+            return;
+        }
+
+        GameSession session = getSessionByPlayer(player);
+        if (session == null) {
+            playerManager.removeForceStartItem(player);
+            hudManager.sendNotInGame(player);
+            return;
+        }
+
+        if (session.getState() != GameState.WAITING) {
+            playerManager.removeForceStartItem(player);
+            hudManager.sendGameAlreadyRunning(player);
+            return;
+        }
+
+        session.forceStart(player);
     }
 }

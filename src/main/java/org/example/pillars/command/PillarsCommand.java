@@ -6,9 +6,7 @@ import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
-import org.example.pillars.GameSession;
 import org.example.pillars.entities.Arena;
-import org.example.pillars.enums.GameState;
 import org.example.pillars.gui.AdminHubMenu;
 import org.example.pillars.gui.ArenaMenu;
 import org.example.pillars.managers.ArenaManager;
@@ -72,38 +70,9 @@ public class PillarsCommand implements CommandExecutor {
                 gameSessionManager.joinSession(player, arena);
             }
 
-            case "leave" -> {
-                GameSession session = gameSessionManager.getSessionByPlayer(player);
+            case "leave" -> gameSessionManager.leaveSession(player);
 
-                if (session == null) {
-                    hudManager.sendNotInGame(player);
-                    return true;
-                }
-
-                gameSessionManager.leaveSession(player);
-                hudManager.sendLeftArena(player);
-            }
-
-            case "forcestart" -> {
-                if (!player.hasPermission("pillars.forcestart")) {
-                    hudManager.sendNoPermission(player);
-                    return true;
-                }
-
-                GameSession session = gameSessionManager.getSessionByPlayer(player);
-
-                if (session == null) {
-                    hudManager.sendNotInGame(player);
-                    return true;
-                }
-
-                if (session.getState() == GameState.RUNNING) {
-                    hudManager.sendGameAlreadyRunning(player);
-                    return true;
-                }
-
-                session.forceStart(player);
-            }
+            case "forcestart", "forceststart" -> gameSessionManager.forceStartSession(player);
 
             case "menu" -> {
                 new ArenaMenu(

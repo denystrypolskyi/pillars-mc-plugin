@@ -18,6 +18,7 @@ import org.example.pillars.managers.TranslationManager;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 public class AdminItemPoolMenu implements InventoryHolder {
@@ -143,7 +144,7 @@ public class AdminItemPoolMenu implements InventoryHolder {
         ItemStack item = new ItemStack(material);
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
-            meta.setDisplayName("§f" + material.name());
+            meta.setDisplayName("§f" + material.name().toLowerCase(Locale.ROOT).replace('_', ' '));
             meta.setLore(List.of(
                     translations.text("menus.item-pool.weight", "weight", weight),
                     translations.text("menus.item-pool.disable")

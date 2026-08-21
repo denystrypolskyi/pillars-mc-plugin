@@ -299,6 +299,10 @@ public class HudManager {
         player.sendMessage(translations.text("messages.arena-not-found"));
     }
 
+    public void sendOnboarding(Player player) {
+        translations.list("welcome-v3").forEach(player::sendMessage);
+    }
+
     public void sendLeftArena(Player player) {
         player.sendMessage(translations.text("messages.left-arena"));
     }
@@ -315,21 +319,30 @@ public class HudManager {
         player.sendMessage(translations.text("messages.arena-closed", "arena", arenaName));
     }
 
-    public void sendPlayerJoinedArena(Set<UUID> recipients, Player player, String arenaName, int currentPlayers, int maxPlayers) {
-        String message = translations.text(
+    public void broadcastPlayerJoinedArena(Player player, String arenaName, int currentPlayers, int maxPlayers) {
+        Bukkit.broadcastMessage(translations.text(
                 "messages.player-joined",
                 "player", player.getName(),
                 "arena", arenaName,
                 "current", currentPlayers,
                 "maximum", maxPlayers
-        );
+        ));
+    }
 
-        for (UUID uuid : recipients) {
-            Player recipient = Bukkit.getPlayer(uuid);
-            if (recipient != null && recipient.isOnline()) {
-                recipient.sendMessage(message);
-            }
-        }
+    public void broadcastPlayerLeftArena(Player player, String arenaName) {
+        Bukkit.broadcastMessage(translations.text(
+                "messages.player-left",
+                "player", player.getName(),
+                "arena", arenaName
+        ));
+    }
+
+    public String serverJoinMessage(Player player) {
+        return translations.text("messages.server-join", "player", player.getName());
+    }
+
+    public String serverQuitMessage(Player player) {
+        return translations.text("messages.server-quit", "player", player.getName());
     }
 
     public void broadcastForceStartedArena(Player player, String arenaName) {
@@ -348,6 +361,39 @@ public class HudManager {
         Bukkit.broadcastMessage(translations.text(
                 "messages.winner",
                 "winner", winnerName,
+                "arena", arenaName
+        ));
+    }
+
+    public void broadcastNoWinner(String arenaName) {
+        Bukkit.broadcastMessage(translations.text("messages.no-winner", "arena", arenaName));
+    }
+
+    public void broadcastElimination(Player victim, Player killer, String arenaName, boolean fellIntoVoid) {
+        if (killer != null && !killer.getUniqueId().equals(victim.getUniqueId())) {
+            String key = fellIntoVoid ? "messages.void-kill" : "messages.player-kill";
+            Bukkit.broadcastMessage(translations.text(
+                    key,
+                    "victim", victim.getName(),
+                    "killer", killer.getName(),
+                    "arena", arenaName
+            ));
+            return;
+        }
+
+        if (fellIntoVoid) {
+            List<String> messages = translations.list(
+                    "messages.void-falls",
+                    "victim", victim.getName(),
+                    "arena", arenaName
+            );
+            Bukkit.broadcastMessage(messages.get(java.util.concurrent.ThreadLocalRandom.current().nextInt(messages.size())));
+            return;
+        }
+
+        Bukkit.broadcastMessage(translations.text(
+                "messages.eliminated",
+                "victim", victim.getName(),
                 "arena", arenaName
         ));
     }
@@ -399,7 +445,7 @@ public class HudManager {
     public void sendItemConfigured(Player player, Material material, String rarity, int weight) {
         player.sendMessage(translations.text(
                 "messages.item-configured",
-                "material", material.name(),
+                "material", displayMaterial(material),
                 "rarity", translations.text("rarities." + rarity.toLowerCase())
         ));
         player.sendMessage(translations.text("messages.internal-weight", "weight", weight));
@@ -408,7 +454,7 @@ public class HudManager {
     public void sendItemRemoved(Player player, Material material, String rarity) {
         player.sendMessage(translations.text(
                 "messages.item-removed",
-                "material", material.name(),
+                "material", displayMaterial(material),
                 "rarity", translations.text("rarities." + rarity.toLowerCase())
         ));
     }
@@ -423,6 +469,10 @@ public class HudManager {
                 "legendary_name", translations.text("rarities.legendary"),
                 "legendary", legendaryPercent
         ));
+    }
+
+    private String displayMaterial(Material material) {
+        return material.name().toLowerCase(Locale.ROOT).replace('_', ' ');
     }
 
     public void sendArenaSettingsUpdated(Player player, Arena arena) {
