@@ -1,11 +1,13 @@
 package org.example.pillars.listeners;
 
+import io.papermc.paper.event.entity.EntityPushedByEntityAttackEvent;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
@@ -129,7 +131,7 @@ public class GameSessionPlayerListener implements Listener {
         }
     }
 
-    @EventHandler
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onPvP(EntityDamageByEntityEvent event) {
 
         if (!(event.getEntity() instanceof Player victim)) return;
@@ -150,6 +152,30 @@ public class GameSessionPlayerListener implements Listener {
                 victim.getUniqueId(),
                 damager.getUniqueId()
         );
+
+        if (event.getDamager() instanceof Player directAttacker) {
+            session.handleDirectPlayerHit(directAttacker, victim);
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onKnockback(EntityPushedByEntityAttackEvent event) {
+        if (!(event.getEntity() instanceof Player victim)) return;
+
+        Player damager = resolveDamagingPlayer(event.getPushedBy());
+        if (damager == null) return;
+
+        GameSession session = gameSessionManager.getSessionByPlayer(victim);
+        if (session == null || session.getState() != GameState.RUNNING) return;
+
+        if (!session.getActivePlayerIds().contains(victim.getUniqueId())
+                || !session.getActivePlayerIds().contains(damager.getUniqueId())) return;
+
+        event.setKnockback(session.modifyKnockback(
+                victim,
+                damager,
+                event.getKnockback()
+        ));
     }
 
     private Player resolveDamagingPlayer(Entity damager) {

@@ -75,6 +75,20 @@ public class AdminHubMenu implements InventoryHolder {
                 List.of(translations.text("menus.admin-hub.legendary-items-lore")),
                 "pool:legendary"
         ));
+        boolean eventsEnabled = gameSessionManager.areRandomEventsEnabled();
+        inventory.setItem(22, actionItem(
+                eventsEnabled ? Material.LIME_DYE : Material.GRAY_DYE,
+                translations.text("menus.admin-hub.random-events"),
+                List.of(
+                        translations.text(
+                                eventsEnabled
+                                        ? "menus.admin-hub.random-events-enabled"
+                                        : "menus.admin-hub.random-events-disabled"
+                        ),
+                        translations.text("menus.admin-hub.random-events-lore")
+                ),
+                "toggle-events"
+        ));
     }
 
     private ItemStack filler() {
@@ -128,6 +142,13 @@ public class AdminHubMenu implements InventoryHolder {
 
         if (action.equals("arenas")) {
             new AdminArenaListMenu(clicker, arenaManager, gameSessionManager, itemManager, hudManager).open();
+            return;
+        }
+
+        if (action.equals("toggle-events")) {
+            boolean enabled = gameSessionManager.toggleRandomEvents();
+            buildMenu();
+            hudManager.sendRandomEventsToggled(clicker, enabled);
             return;
         }
 

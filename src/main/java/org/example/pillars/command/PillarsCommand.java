@@ -74,6 +74,20 @@ public class PillarsCommand implements CommandExecutor {
 
             case "forcestart", "forceststart" -> gameSessionManager.forceStartSession(player);
 
+            case "event" -> {
+                if (args.length < 2) {
+                    hudManager.sendGameEventUsage(player);
+                    return true;
+                }
+
+                if (args[1].equalsIgnoreCase("next")) {
+                    gameSessionManager.showNextGameEvent(player);
+                    return true;
+                }
+
+                gameSessionManager.forceStartGameEvent(player, args[1]);
+            }
+
             case "menu" -> {
                 new ArenaMenu(
                         player,

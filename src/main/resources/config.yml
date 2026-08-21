@@ -10,10 +10,52 @@ settings:
   borderSpawnPaddingBlocks: 10
   spawnPillarHeightBlocks: 5
   lobbyWorldName: "world"
-  witherCountdownSeconds: 5
-  witherEffectDurationTicks: 40
-  witherEffectPeriodTicks: 40
-  witherEffectAmplifier: 1
+  gameEvents:
+    enabled: true
+    minimumDelaySeconds: 30
+    maximumDelaySeconds: 60
+    antiRepeatHistorySize: 2
+    superSmashBros:
+      durationSeconds: 20
+      knockbackMultiplier: 2.5
+    cosmicDrift:
+      durationSeconds: 25
+      gravityMultiplier: 0.35
+      jumpStrengthMultiplier: 1.3
+      fallDamageMultiplier: 0.25
+    meteorShower:
+      durationSeconds: 24
+      wavePeriodTicks: 60
+      warningTicks: 30
+      maxMeteorsPerWave: 3
+      playersPerMeteor: 4
+      impactRadius: 3.5
+      maxDamage: 6.0
+      knockbackStrength: 1.15
+      spawnHeight: 16.0
+      randomOffsetRadius: 3.0
+    earthquake:
+      durationSeconds: 24
+      wavePeriodTicks: 60
+      warningTicks: 30
+      missingDurationTicks: 60
+      maxBlocksPerWave: 4
+      playersPerBlock: 3
+      horizontalSearchRadius: 3
+    huntBegins:
+      durationSeconds: 30
+      rewardItemCount: 2
+    hotPotato:
+      durationSeconds: 15
+      passCooldownTicks: 30
+      explosionDamage: 6.0
+      horizontalKnockback: 0.45
+      verticalKnockback: 1.05
+      urgentSeconds: 3
+    lastBreath:
+      effectDurationTicks: 40
+      effectPeriodTicks: 40
+      effectAmplifier: 1
   itemRarity:
     legendaryPercent: 6
     rarePercent: 20
@@ -79,7 +121,7 @@ arenas:
       en: "arena 8 #1"
       ru: "арена 8 №1"
     joiningOpen: true
-    minPlayers: 4
+    minPlayers: 2
     itemCooldownSeconds: 3
 
   arena8_2:
@@ -97,7 +139,7 @@ arenas:
       en: "arena 8 #2"
       ru: "арена 8 №2"
     joiningOpen: true
-    minPlayers: 4
+    minPlayers: 2
     itemCooldownSeconds: 3
 
   arena8_3:
@@ -115,7 +157,7 @@ arenas:
       en: "arena 8 #3"
       ru: "арена 8 №3"
     joiningOpen: true
-    minPlayers: 4
+    minPlayers: 2
     itemCooldownSeconds: 3
 
   # ------------------ 12 players ------------------
@@ -138,7 +180,7 @@ arenas:
       en: "arena 12 #1"
       ru: "арена 12 №1"
     joiningOpen: true
-    minPlayers: 6
+    minPlayers: 2
     itemCooldownSeconds: 3
 
   arena12_2:
@@ -160,7 +202,7 @@ arenas:
       en: "arena 12 #2"
       ru: "арена 12 №2"
     joiningOpen: true
-    minPlayers: 6
+    minPlayers: 2
     itemCooldownSeconds: 3
 
   arena12_3:
@@ -182,5 +224,5 @@ arenas:
       en: "arena 12 #3"
       ru: "арена 12 №3"
     joiningOpen: true
-    minPlayers: 6
+    minPlayers: 2
     itemCooldownSeconds: 3

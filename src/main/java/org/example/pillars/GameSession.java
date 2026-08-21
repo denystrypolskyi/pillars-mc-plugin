@@ -3,11 +3,14 @@ package org.example.pillars;
 import org.bukkit.*;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.potion.PotionEffect;
-import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.util.Vector;
 import org.example.pillars.entities.Arena;
+import org.example.pillars.enums.ArenaResetResult;
 import org.example.pillars.enums.GameState;
+import org.example.pillars.gameevents.GameEventManager;
+import org.example.pillars.gameevents.GameEventStatus;
+import org.example.pillars.gameevents.NextGameEventStatus;
 import org.example.pillars.managers.*;
 
 import java.util.*;
@@ -35,13 +38,12 @@ public class GameSession {
     private final ItemManager itemManager;
     private final ArenaManager arenaManager;
     private final JavaPlugin plugin;
+    private final GameEventManager gameEventManager;
 
     private BukkitTask beginGameCountdownTask;
     private BukkitTask waitingForPlayersTask;
     private BukkitTask itemDistributionTask;
-    private BukkitTask witherCountdownTask;
-    private BukkitTask witherEffectTask;
-    private BukkitTask witherStartDelayTask;
+    private BukkitTask finalEventStartDelayTask;
     private BukkitTask endGameCountdownStartDelayTask;
     private BukkitTask arenaResetDelayTask;
 
@@ -63,10 +65,6 @@ public class GameSession {
     private final double borderSpawnPaddingBlocks;
     private final int spawnPillarHeightBlocks;
     private final String lobbyWorldName;
-    private final int witherCountdownSeconds;
-    private final int witherEffectDurationTicks;
-    private final long witherEffectPeriodTicks;
-    private final int witherEffectAmplifier;
 
     public GameSession(
             JavaPlugin plugin,
@@ -90,6 +88,7 @@ public class GameSession {
         this.itemManager = itemManager;
         this.arenaManager = arenaManager;
         this.arena = arena;
+        this.gameEventManager = new GameEventManager(plugin, this, hudManager, soundManager, itemManager);
 
         this.beginCountdownSeconds = Math.max(1, plugin.getConfig().getInt("settings.beginCountdownSeconds", 5));
         this.endGameLobbyCountdownSeconds = Math.max(1, plugin.getConfig().getInt("settings.endGameLobbyCountdownSeconds", 5));
@@ -103,10 +102,6 @@ public class GameSession {
                 plugin.getConfig().getInt("settings.spawnPillarHeightBlocks", 5)
         ));
         this.lobbyWorldName = plugin.getConfig().getString("settings.lobbyWorldName", "world");
-        this.witherCountdownSeconds = Math.max(1, plugin.getConfig().getInt("settings.witherCountdownSeconds", 5));
-        this.witherEffectDurationTicks = Math.max(1, plugin.getConfig().getInt("settings.witherEffectDurationTicks", 40));
-        this.witherEffectPeriodTicks = Math.max(1L, plugin.getConfig().getLong("settings.witherEffectPeriodTicks", 40L));
-        this.witherEffectAmplifier = Math.max(0, plugin.getConfig().getInt("settings.witherEffectAmplifier", 1));
     }
 
     public void playerJoin(Player player) {
@@ -166,6 +161,10 @@ public class GameSession {
         boolean wasActive = activePlayers.contains(uuid);
 
         if (isDisconnect && !wasActive && !spectators.contains(uuid)) return;
+
+        if (wasActive && state == GameState.RUNNING) {
+            gameEventManager.onPlayerRemoved(player);
+        }
 
         activePlayers.remove(uuid);
         spectators.remove(uuid);
@@ -245,6 +244,7 @@ public class GameSession {
 
         rewardKiller(killer);
         hudManager.broadcastElimination(dead, killer, arena.getDisplayName(), fellIntoVoid);
+        gameEventManager.onPlayerEliminated(dead, killer);
 
         setPlayerAsSpectator(dead);
 
@@ -438,11 +438,58 @@ public class GameSession {
         resetArenaInternal();
     }
 
+    public ArenaResetResult resetArenaManually(Runnable completionCallback) {
+        if (resetInProgress) return ArenaResetResult.ALREADY_RESETTING;
+        if (Bukkit.getWorld(lobbyWorldName) == null) return ArenaResetResult.LOBBY_UNAVAILABLE;
+
+        Set<UUID> participants = new HashSet<>(activePlayers);
+        participants.addAll(spectators);
+
+        resetInProgress = true;
+        state = GameState.RESETTING;
+        updateArenaHudForAllPlayers();
+
+        restoreAdminSpectators();
+
+        Set<Player> playersToReturn = new HashSet<>();
+        for (UUID uuid : participants) {
+            Player player = Bukkit.getPlayer(uuid);
+            if (player != null) {
+                playersToReturn.add(player);
+            }
+        }
+
+        World arenaWorld = Bukkit.getWorld(arena.getWorldName());
+        if (arenaWorld != null) {
+            playersToReturn.addAll(arenaWorld.getPlayers());
+        }
+
+        for (Player player : playersToReturn) {
+            playerManager.resetAndReturnToLobby(player, lobbyWorldName);
+            hudManager.cleanupPlayerScoreboard(player);
+        }
+
+        resetSession();
+        resetArenaInternal(completionCallback);
+        return ArenaResetResult.STARTED;
+    }
+
     private void resetArenaInternal() {
+        resetArenaInternal(null);
+    }
+
+    private void resetArenaInternal(Runnable completionCallback) {
         arenaManager.resetArena(arena, () -> {
             state = GameState.WAITING;
             resetInProgress = false;
+            if (completionCallback != null) {
+                completionCallback.run();
+            }
         });
+    }
+
+    public boolean isResetInProgress() {
+        return resetInProgress;
     }
 
     private void resetSession() {
@@ -470,11 +517,10 @@ public class GameSession {
         cancelBeginGameCountdownTask();
         cancelWaitingForPlayersTask();
         cancelItemDistributionTask();
-        cancelWitherTask();
-        cancelFinalZoneTask();
-        cancelWitherStartDelayTask();
+        cancelFinalEventStartDelayTask();
         cancelEndGameCountdownStartDelayTask();
         cancelArenaResetDelayTask();
+        gameEventManager.stop();
 
         cancelEndGameCountdownTasks();
 
@@ -547,6 +593,38 @@ public class GameSession {
 
     public GameState getState() {
         return state;
+    }
+
+    public Vector modifyKnockback(Player victim, Player damager, Vector knockback) {
+        return gameEventManager.modifyKnockback(victim, damager, knockback);
+    }
+
+    public void handleDirectPlayerHit(Player attacker, Player victim) {
+        gameEventManager.onDirectHit(attacker, victim);
+    }
+
+    public boolean startGameEvent(String eventId) {
+        return gameEventManager.startEvent(eventId);
+    }
+
+    public GameEventStatus getActiveGameEventStatus() {
+        return gameEventManager.getActiveEventStatus();
+    }
+
+    public NextGameEventStatus getNextGameEventStatus() {
+        return gameEventManager.getNextEventStatus();
+    }
+
+    public void setAutomaticGameEventsEnabled(boolean enabled) {
+        gameEventManager.setAutomaticEventsEnabled(enabled);
+    }
+
+    public boolean areAutomaticGameEventsEnabled() {
+        return gameEventManager.areAutomaticEventsEnabled();
+    }
+
+    public boolean isFinalPhaseActive() {
+        return gameEventManager.isFinalPhaseActive();
     }
 
     private void updateArenaHudForAllPlayers() {
@@ -627,6 +705,7 @@ public class GameSession {
                     hudManager.broadcastGameStarted(arena.getDisplayName());
                 }
                 startItemDistributionTask();
+                gameEventManager.scheduleRandomEvent();
             }
         }, 0L, 20L);
     }
@@ -642,7 +721,12 @@ public class GameSession {
                 Player player = Bukkit.getPlayer(uuid);
                 if (player != null) {
                     double currentBorderSize = getCurrentBorderSize();
-                    hudManager.sendItemCooldown(player, counter[0], getSecondsUntilNextBorderDecrease(currentBorderSize), currentBorderSize);
+                    hudManager.sendItemCooldown(
+                            player,
+                            counter[0],
+                            getSecondsUntilNextBorderDecrease(currentBorderSize),
+                            getActiveGameEventStatus()
+                    );
                 }
             }
 
@@ -734,83 +818,6 @@ public class GameSession {
         hudManager.resetScoreboard(player);
     }
 
-
-    private void startWitherCountdown() {
-        if (state != GameState.RUNNING) return;
-
-        final int[] counter = {witherCountdownSeconds};
-
-        witherCountdownTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
-
-            if (activePlayers.isEmpty()) {
-                cancelFinalZoneTask();
-                return;
-            }
-
-            for (UUID uuid : getActivePlayerIds()) {
-                if (uuid == null) {
-                    continue;
-                }
-                Player player = Bukkit.getPlayer(uuid);
-                if (player == null) {
-                    continue;
-                }
-                hudManager.sendWitherCountdownTitle(player, counter[0]);
-                soundManager.playCountdownTickSound(player);
-            }
-
-            counter[0]--;
-
-            if (counter[0] < 0) {
-                cancelFinalZoneTask();
-                for (UUID uuid : getActivePlayerIds()) {
-                    if (uuid == null) {
-                        continue;
-                    }
-                    Player player = Bukkit.getPlayer(uuid);
-                    if (player == null) {
-                        continue;
-                    }
-                    hudManager.sendWitherStartTitle(player);
-                    soundManager.playWitherStartSound(player);
-
-                }
-                startWitherTask();
-            }
-
-        }, 0L, 20L);
-    }
-
-    private void startWitherTask() {
-        if (state != GameState.RUNNING) return;
-
-        witherEffectTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
-
-            if (activePlayers.isEmpty()) {
-                cancelWitherTask();
-                return;
-            }
-
-            for (UUID uuid : getActivePlayerIds()) {
-                if (uuid == null) {
-                    continue;
-                }
-                Player player = Bukkit.getPlayer(uuid);
-                if (player == null) {
-                    continue;
-                }
-                player.addPotionEffect(new PotionEffect(
-                        PotionEffectType.WITHER,
-                        witherEffectDurationTicks,
-                        witherEffectAmplifier,
-                        false,
-                        true
-                ));
-            }
-
-        }, 0L, witherEffectPeriodTicks);
-    }
-
     public void startWorldBorder() {
         List<Location> spawns = arena.getSpawnPoints();
         if (spawns.isEmpty()) return;
@@ -853,9 +860,9 @@ public class GameSession {
         borderShrinkEndTimeMillis = System.currentTimeMillis() + (borderShrinkSeconds * 1000L);
         borderShrinkBlocksPerSecond = Math.max(0.0, (initialSize - borderMinSize) / borderShrinkSeconds);
 
-        witherStartDelayTask = Bukkit.getScheduler().runTaskLater(
+        finalEventStartDelayTask = Bukkit.getScheduler().runTaskLater(
                 plugin,
-                this::startWitherCountdown,
+                gameEventManager::startLastBreathEvent,
                 borderShrinkSeconds * 20L
         );
     }
@@ -869,25 +876,10 @@ public class GameSession {
         endGameCountdownTasks.clear();
     }
 
-
-    private void cancelWitherTask() {
-        if (witherEffectTask != null) {
-            witherEffectTask.cancel();
-            witherEffectTask = null;
-        }
-    }
-
-    private void cancelFinalZoneTask() {
-        if (witherCountdownTask != null) {
-            witherCountdownTask.cancel();
-            witherCountdownTask = null;
-        }
-    }
-
-    private void cancelWitherStartDelayTask() {
-        if (witherStartDelayTask != null) {
-            witherStartDelayTask.cancel();
-            witherStartDelayTask = null;
+    private void cancelFinalEventStartDelayTask() {
+        if (finalEventStartDelayTask != null) {
+            finalEventStartDelayTask.cancel();
+            finalEventStartDelayTask = null;
         }
     }
 

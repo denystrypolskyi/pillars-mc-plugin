@@ -4,7 +4,10 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.example.pillars.entities.Arena;
 import org.example.pillars.GameSession;
+import org.example.pillars.enums.ArenaResetResult;
 import org.example.pillars.enums.GameState;
+import org.example.pillars.gameevents.GameEventStatus;
+import org.example.pillars.gameevents.NextGameEventStatus;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -222,5 +225,102 @@ public class GameSessionManager {
         }
 
         session.forceStart(player);
+    }
+
+    public void forceStartGameEvent(Player player, String eventId) {
+        if (!player.hasPermission("pillars.admin")) {
+            hudManager.sendNoPermission(player);
+            return;
+        }
+
+        GameSession session = getSessionByPlayer(player);
+        if (session == null) {
+            hudManager.sendNotInGame(player);
+            return;
+        }
+
+        if (session.getState() != GameState.RUNNING) {
+            hudManager.sendGameEventUnavailable(player);
+            return;
+        }
+
+        if (session.isFinalPhaseActive()) {
+            hudManager.sendGameEventBlockedByFinalPhase(player);
+            return;
+        }
+
+        if (!session.startGameEvent(eventId)) {
+            hudManager.sendUnknownGameEvent(player, eventId);
+        }
+    }
+
+    public void showNextGameEvent(Player player) {
+        if (!player.hasPermission("pillars.admin")) {
+            hudManager.sendNoPermission(player);
+            return;
+        }
+
+        GameSession session = getSessionByPlayer(player);
+        if (session == null) {
+            hudManager.sendNotInGame(player);
+            return;
+        }
+        if (session.getState() != GameState.RUNNING) {
+            hudManager.sendGameEventUnavailable(player);
+            return;
+        }
+        if (!session.areAutomaticGameEventsEnabled()) {
+            hudManager.sendNextGameEventDisabled(player);
+            return;
+        }
+
+        NextGameEventStatus nextEvent = session.getNextGameEventStatus();
+        if (nextEvent != null) {
+            hudManager.sendNextGameEvent(player, nextEvent);
+            return;
+        }
+
+        GameEventStatus activeEvent = session.getActiveGameEventStatus();
+        if (activeEvent != null) {
+            hudManager.sendNextGameEventAfterCurrent(player);
+        } else {
+            hudManager.sendNextGameEventUnavailable(player);
+        }
+    }
+
+    public boolean areRandomEventsEnabled() {
+        return plugin.getConfig().getBoolean("settings.gameEvents.enabled", true);
+    }
+
+    public boolean toggleRandomEvents() {
+        boolean enabled = !areRandomEventsEnabled();
+        plugin.getConfig().set("settings.gameEvents.enabled", enabled);
+        plugin.saveConfig();
+
+        for (GameSession session : sessions.values()) {
+            session.setAutomaticGameEventsEnabled(enabled);
+        }
+        return enabled;
+    }
+
+    public boolean isArenaResetting(Arena arena) {
+        GameSession session = getSession(arena);
+        return session != null && session.isResetInProgress();
+    }
+
+    public ArenaResetResult resetArenaManually(Player startedBy, Arena arena) {
+        GameSession session = getOrCreateSession(arena);
+        ArenaResetResult result = session.resetArenaManually(() -> {
+            if (startedBy.isOnline()) {
+                hudManager.sendManualArenaResetCompleted(startedBy, arena.getDisplayName());
+            }
+        });
+
+        switch (result) {
+            case STARTED -> hudManager.sendManualArenaResetStarted(startedBy, arena.getDisplayName());
+            case ALREADY_RESETTING -> hudManager.sendManualArenaResetInProgress(startedBy, arena.getDisplayName());
+            case LOBBY_UNAVAILABLE -> hudManager.sendManualArenaResetLobbyUnavailable(startedBy);
+        }
+        return result;
     }
 }

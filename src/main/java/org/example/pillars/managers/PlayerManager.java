@@ -41,6 +41,7 @@ public class PlayerManager {
         player.setGameMode(GameMode.SURVIVAL);
         player.setAllowFlight(false);
         player.setFlying(false);
+        player.setGlowing(false);
     }
 
     public void resetAndReturnToLobby(Player player) {

@@ -11,6 +11,7 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.example.pillars.entities.Arena;
+import org.example.pillars.enums.ArenaResetResult;
 import org.example.pillars.managers.ArenaManager;
 import org.example.pillars.managers.GameSessionManager;
 import org.example.pillars.managers.HudManager;
@@ -31,6 +32,8 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
     private final HudManager hudManager;
     private final Arena arena;
     private final TranslationManager translations;
+
+    private boolean resetConfirmationPending;
 
     public AdminArenaSettingsMenu(Player player, ArenaManager arenaManager, GameSessionManager gameSessionManager, ItemManager itemManager, HudManager hudManager, Arena arena) {
         this.player = player;
@@ -117,6 +120,29 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
                 translations.list("menus.arena-settings.spectate-lore"),
                 "spectate"
         ));
+
+        if (gameSessionManager.isArenaResetting(arena)) {
+            inventory.setItem(26, actionItem(
+                    Material.GRAY_DYE,
+                    translations.text("menus.arena-settings.reset-in-progress"),
+                    translations.list("menus.arena-settings.reset-in-progress-lore"),
+                    "reset_in_progress"
+            ));
+        } else if (resetConfirmationPending) {
+            inventory.setItem(26, actionItem(
+                    Material.RED_CONCRETE,
+                    translations.text("menus.arena-settings.confirm-reset"),
+                    translations.list("menus.arena-settings.confirm-reset-lore"),
+                    "confirm_reset"
+            ));
+        } else {
+            inventory.setItem(26, actionItem(
+                    Material.TNT,
+                    translations.text("menus.arena-settings.reset-arena"),
+                    translations.list("menus.arena-settings.reset-arena-lore"),
+                    "reset_arena"
+            ));
+        }
     }
 
     private ItemStack filler() {
@@ -200,6 +226,28 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
 
         if (action.equals("spectate")) {
             gameSessionManager.spectateSession(clicker, arena);
+            return;
+        }
+
+        if (action.equals("reset_arena")) {
+            resetConfirmationPending = true;
+            buildMenu();
+            return;
+        }
+
+        if (action.equals("confirm_reset")) {
+            ArenaResetResult result = gameSessionManager.resetArenaManually(clicker, arena);
+            resetConfirmationPending = false;
+            if (result == ArenaResetResult.STARTED) {
+                clicker.closeInventory();
+            } else {
+                buildMenu();
+            }
+            return;
+        }
+
+        if (action.equals("reset_in_progress")) {
+            hudManager.sendManualArenaResetInProgress(clicker, arena.getDisplayName());
             return;
         }
 

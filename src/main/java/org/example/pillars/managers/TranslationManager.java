@@ -145,7 +145,6 @@ public final class TranslationManager {
         return value
                 .replaceAll("(?i)&6&lpillars &8»\\s*", "&8› ")
                 .replaceAll("(?i)/pillars\\b", "/p")
-                .replaceAll("(?i)(?<!/)\\bpillars\\s*", "")
                 .toLowerCase(Locale.ROOT);
     }
 

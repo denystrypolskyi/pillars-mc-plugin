@@ -6,6 +6,8 @@ import org.bukkit.entity.Player;
 import org.bukkit.scoreboard.*;
 import org.example.pillars.entities.Arena;
 import org.example.pillars.enums.GameState;
+import org.example.pillars.gameevents.GameEventStatus;
+import org.example.pillars.gameevents.NextGameEventStatus;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
@@ -210,6 +212,177 @@ public class HudManager {
         );
     }
 
+    public void sendSuperSmashBrosStarted(Set<UUID> playerIds, int durationSeconds, double multiplier) {
+        for (UUID uuid : playerIds) {
+            Player player = Bukkit.getPlayer(uuid);
+            if (player == null || !player.isOnline()) continue;
+
+            player.sendMessage(translations.text(
+                    "messages.super-smash-bros-start",
+                    "multiplier", multiplier,
+                    "seconds", durationSeconds
+            ));
+        }
+    }
+
+    public void sendSuperSmashBrosEnded(Set<UUID> playerIds) {
+        for (UUID uuid : playerIds) {
+            Player player = Bukkit.getPlayer(uuid);
+            if (player == null || !player.isOnline()) continue;
+
+            player.sendMessage(translations.text("messages.super-smash-bros-end"));
+        }
+    }
+
+    public void sendCosmicDriftStarted(Set<UUID> playerIds, int durationSeconds) {
+        for (UUID uuid : playerIds) {
+            Player player = Bukkit.getPlayer(uuid);
+            if (player == null || !player.isOnline()) continue;
+
+            player.sendMessage(translations.text(
+                    "messages.cosmic-drift-start",
+                    "seconds", durationSeconds
+            ));
+        }
+    }
+
+    public void sendCosmicDriftEnded(Set<UUID> playerIds) {
+        for (UUID uuid : playerIds) {
+            Player player = Bukkit.getPlayer(uuid);
+            if (player == null || !player.isOnline()) continue;
+
+            player.sendMessage(translations.text("messages.cosmic-drift-end"));
+        }
+    }
+
+    public void sendMeteorShowerStarted(Set<UUID> playerIds, int durationSeconds) {
+        for (UUID uuid : playerIds) {
+            Player player = Bukkit.getPlayer(uuid);
+            if (player == null || !player.isOnline()) continue;
+
+            player.sendMessage(translations.text(
+                    "messages.meteor-shower-start",
+                    "seconds", durationSeconds
+            ));
+        }
+    }
+
+    public void sendMeteorShowerEnded(Set<UUID> playerIds) {
+        for (UUID uuid : playerIds) {
+            Player player = Bukkit.getPlayer(uuid);
+            if (player == null || !player.isOnline()) continue;
+
+            player.sendMessage(translations.text("messages.meteor-shower-end"));
+        }
+    }
+
+    public void sendEarthquakeStarted(Set<UUID> playerIds, int durationSeconds) {
+        for (UUID uuid : playerIds) {
+            Player player = Bukkit.getPlayer(uuid);
+            if (player == null || !player.isOnline()) continue;
+
+            player.sendMessage(translations.text(
+                    "messages.earthquake-start",
+                    "seconds", durationSeconds
+            ));
+        }
+    }
+
+    public void sendEarthquakeEnded(Set<UUID> playerIds) {
+        for (UUID uuid : playerIds) {
+            Player player = Bukkit.getPlayer(uuid);
+            if (player == null || !player.isOnline()) continue;
+
+            player.sendMessage(translations.text("messages.earthquake-end"));
+        }
+    }
+
+    public void sendHuntBeginsStarted(
+            Set<UUID> playerIds,
+            String targetName,
+            int durationSeconds,
+            int rewardItemCount
+    ) {
+        sendMessageToPlayers(
+                playerIds,
+                "messages.hunt-begins-start",
+                "target", targetName,
+                "seconds", durationSeconds,
+                "reward", rewardItemCount
+        );
+    }
+
+    public void sendHuntTargetEliminated(
+            Set<UUID> playerIds,
+            String killerName,
+            String targetName,
+            int rewardItemCount
+    ) {
+        sendMessageToPlayers(
+                playerIds,
+                "messages.hunt-target-eliminated",
+                "killer", killerName,
+                "target", targetName,
+                "reward", rewardItemCount
+        );
+    }
+
+    public void sendHuntTargetSurvived(Set<UUID> playerIds, String targetName, int rewardItemCount) {
+        sendMessageToPlayers(
+                playerIds,
+                "messages.hunt-target-survived",
+                "target", targetName,
+                "reward", rewardItemCount
+        );
+    }
+
+    public void sendHuntTargetLeft(Set<UUID> playerIds, String targetName) {
+        sendMessageToPlayers(playerIds, "messages.hunt-target-left", "target", targetName);
+    }
+
+    public void sendHuntEndedWithoutReward(Set<UUID> playerIds) {
+        sendMessageToPlayers(playerIds, "messages.hunt-ended-without-reward");
+    }
+
+    public void sendHotPotatoStarted(Set<UUID> playerIds, String holderName, int durationSeconds) {
+        sendMessageToPlayers(
+                playerIds,
+                "messages.hot-potato-start",
+                "holder", holderName,
+                "seconds", durationSeconds
+        );
+    }
+
+    public void sendHotPotatoPassed(Set<UUID> playerIds, String oldHolderName, String newHolderName) {
+        sendMessageToPlayers(
+                playerIds,
+                "messages.hot-potato-passed",
+                "old_holder", oldHolderName,
+                "new_holder", newHolderName
+        );
+    }
+
+    public void sendHotPotatoReassigned(Set<UUID> playerIds, String holderName) {
+        sendMessageToPlayers(playerIds, "messages.hot-potato-reassigned", "holder", holderName);
+    }
+
+    public void sendHotPotatoExploded(Set<UUID> playerIds, String holderName) {
+        sendMessageToPlayers(playerIds, "messages.hot-potato-exploded", "holder", holderName);
+    }
+
+    public void sendHotPotatoEndedWithoutHolder(Set<UUID> playerIds) {
+        sendMessageToPlayers(playerIds, "messages.hot-potato-no-holder");
+    }
+
+    private void sendMessageToPlayers(Set<UUID> playerIds, String key, Object... placeholders) {
+        for (UUID uuid : playerIds) {
+            Player player = Bukkit.getPlayer(uuid);
+            if (player == null || !player.isOnline()) continue;
+
+            player.sendMessage(translations.text(key, placeholders));
+        }
+    }
+
     public void sendArenaResettingTitle(Player player) {
         player.sendTitle(
                 translations.text("titles.arena-resetting.title"),
@@ -230,16 +403,36 @@ public class HudManager {
         );
     }
 
-    public void sendItemCooldown(Player player, int secondsLeft, long secondsUntilNextZoneDecrease, double zoneSize) {
+    public void sendItemCooldown(
+            Player player,
+            int secondsLeft,
+            long secondsUntilNextZoneDecrease,
+            GameEventStatus gameEventStatus
+    ) {
         String zoneTimer = secondsUntilNextZoneDecrease > 0
                 ? translations.text("action-bar.zone-decrease", "seconds", secondsUntilNextZoneDecrease)
                 : translations.text("action-bar.zone-final");
 
+        String eventStatus;
+        if (gameEventStatus == null) {
+            eventStatus = translations.text("game-events.none");
+        } else {
+            String eventName = translations.text("game-events." + gameEventStatus.id());
+            String templateKey = gameEventStatus.remainingSeconds() >= 0
+                    ? "action-bar.timed-game-event-value"
+                    : "action-bar.indefinite-game-event-value";
+            eventStatus = translations.text(
+                    templateKey,
+                    "event", eventName,
+                    "seconds", gameEventStatus.remainingSeconds()
+            );
+        }
+
         player.sendActionBar(translations.text(
-                "action-bar.item-status",
-                "seconds", secondsLeft,
+                "action-bar.match-status",
+                "item_seconds", secondsLeft,
                 "zone", zoneTimer,
-                "size", Math.ceil(zoneSize)
+                "event", eventStatus
         ));
     }
 
@@ -416,6 +609,64 @@ public class HudManager {
         player.sendMessage(translations.text("messages.command-usage"));
     }
 
+    public void sendGameEventUsage(Player player) {
+        player.sendMessage(translations.text("messages.game-event-usage"));
+    }
+
+    public void sendGameEventUnavailable(Player player) {
+        player.sendMessage(translations.text("messages.game-event-unavailable"));
+    }
+
+    public void sendGameEventBlockedByFinalPhase(Player player) {
+        player.sendMessage(translations.text("messages.game-event-final-phase"));
+    }
+
+    public void sendUnknownGameEvent(Player player, String eventId) {
+        player.sendMessage(translations.text("messages.game-event-unknown", "event", eventId));
+    }
+
+    public void sendNextGameEvent(Player player, NextGameEventStatus status) {
+        player.sendMessage(translations.text(
+                "messages.game-event-next",
+                "event", translations.text("game-events." + status.id()),
+                "seconds", status.secondsUntilStart()
+        ));
+    }
+
+    public void sendNextGameEventAfterCurrent(Player player) {
+        player.sendMessage(translations.text("messages.game-event-next-after-current"));
+    }
+
+    public void sendNextGameEventDisabled(Player player) {
+        player.sendMessage(translations.text("messages.game-event-next-disabled"));
+    }
+
+    public void sendNextGameEventUnavailable(Player player) {
+        player.sendMessage(translations.text("messages.game-event-next-unavailable"));
+    }
+
+    public void sendRandomEventsToggled(Player player, boolean enabled) {
+        player.sendMessage(translations.text(
+                enabled ? "messages.random-events-enabled" : "messages.random-events-disabled"
+        ));
+    }
+
+    public void sendManualArenaResetStarted(Player player, String arenaName) {
+        player.sendMessage(translations.text("messages.manual-arena-reset-started", "arena", arenaName));
+    }
+
+    public void sendManualArenaResetCompleted(Player player, String arenaName) {
+        player.sendMessage(translations.text("messages.manual-arena-reset-completed", "arena", arenaName));
+    }
+
+    public void sendManualArenaResetInProgress(Player player, String arenaName) {
+        player.sendMessage(translations.text("messages.manual-arena-reset-in-progress", "arena", arenaName));
+    }
+
+    public void sendManualArenaResetLobbyUnavailable(Player player) {
+        player.sendMessage(translations.text("messages.manual-arena-reset-lobby-unavailable"));
+    }
+
     public void sendJoinUsage(Player player) {
         player.sendMessage(translations.text("messages.join-usage"));
     }
@@ -520,24 +771,13 @@ public class HudManager {
         player.sendMessage(translations.text("messages.lobby-world-missing", "world", worldName));
     }
 
-    public void sendWitherCountdownTitle(Player player, int secondsLeft) {
-        player.sendTitle(
-                translations.text("titles.final-zone.title"),
-                translations.text("titles.final-zone.subtitle", "seconds", secondsLeft),
-                FADE_IN,
-                MEDIUM_STAY,
-                FADE_OUT
-        );
-    }
+    public void sendLastBreathStarted(Set<UUID> playerIds) {
+        for (UUID uuid : playerIds) {
+            Player player = Bukkit.getPlayer(uuid);
+            if (player == null || !player.isOnline()) continue;
 
-    public void sendWitherStartTitle(Player player) {
-        player.sendTitle(
-                translations.text("titles.wither-start.title"),
-                translations.text("titles.wither-start.subtitle"),
-                FADE_IN,
-                LONG_STAY,
-                FADE_OUT
-        );
+            player.sendMessage(translations.text("messages.last-breath-start"));
+        }
     }
 
     private String formatState(GameState state) {

@@ -71,7 +71,7 @@ public class SoundManager {
         );
     }
 
-    public void playWitherStartSound(Player player) {
+    public void playLastBreathStartSound(Player player) {
         player.playSound(player.getLocation(), Sound.ENTITY_WITHER_SPAWN, 1.0f, 1.0f);
     }
 }
