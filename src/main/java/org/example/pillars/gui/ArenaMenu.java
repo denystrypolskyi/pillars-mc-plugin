@@ -27,6 +27,7 @@ public class ArenaMenu implements InventoryHolder {
     private final TranslationManager translations;
 
     private static final NamespacedKey ARENA_KEY = new NamespacedKey("pillars", "arena_worldname");
+    private static final NamespacedKey ACTION_KEY = new NamespacedKey("pillars", "arena_action");
     private static final int MENU_SIZE = 54;
     public ArenaMenu(Player player, ArenaManager arenaManager, GameSessionManager sessionManager, HudManager hudManager) {
         this.player = player;
@@ -49,13 +50,13 @@ public class ArenaMenu implements InventoryHolder {
         if (arenas.isEmpty()) {
             inventory.setItem(22, ArenaMenuItemFactory.visualItem(
                     Material.BARRIER,
-                    translations.text("messages.no-joinable-arena"),
+                    translations.text("menus.arena-selection.empty"),
                     List.of()
             ));
             return;
         }
 
-        ArenaMenuItemFactory.placeVerticalArenaItems(
+        ArenaMenuItemFactory.placeArenaItems(
                 inventory,
                 arenas,
                 arena -> ArenaMenuItemFactory.playerArenaItem(
@@ -63,9 +64,10 @@ public class ArenaMenu implements InventoryHolder {
                         sessionManager.getSession(arena),
                         ARENA_KEY,
                         translations
-                ),
-                translations
+                )
         );
+
+        inventory.setItem(49, ArenaMenuItemFactory.quickJoinItem(ACTION_KEY, translations));
     }
 
     public void open() {
@@ -76,6 +78,21 @@ public class ArenaMenu implements InventoryHolder {
         event.setCancelled(true);
 
         if (event.getCurrentItem() == null || !event.getCurrentItem().hasItemMeta()) return;
+
+        String action = event.getCurrentItem().getItemMeta()
+                .getPersistentDataContainer().get(ACTION_KEY, PersistentDataType.STRING);
+
+        if ("quick-join".equals(action)) {
+            Arena arena = sessionManager.findQuickJoinArena();
+            if (arena == null) {
+                hudManager.sendNoJoinableSession(player);
+                return;
+            }
+
+            sessionManager.joinSession(player, arena);
+            player.closeInventory();
+            return;
+        }
 
         String worldName = event.getCurrentItem().getItemMeta()
                 .getPersistentDataContainer().get(ARENA_KEY, PersistentDataType.STRING);

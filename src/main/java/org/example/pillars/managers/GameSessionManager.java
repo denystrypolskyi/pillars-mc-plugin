@@ -255,11 +255,6 @@ public class GameSessionManager {
     }
 
     public void showNextGameEvent(Player player) {
-        if (!player.hasPermission("pillars.admin")) {
-            hudManager.sendNoPermission(player);
-            return;
-        }
-
         GameSession session = getSessionByPlayer(player);
         if (session == null) {
             hudManager.sendNotInGame(player);

@@ -1,4 +1,4 @@
-language: ru # en | ru
+language: en # en | ru
 
 settings:
   beginCountdownSeconds: 5
@@ -9,7 +9,7 @@ settings:
   borderMinSize: 1
   borderSpawnPaddingBlocks: 10
   spawnPillarHeightBlocks: 5
-  lobbyWorldName: "world"
+  lobbyWorldName: "lobby"
   gameEvents:
     enabled: true
     minimumDelaySeconds: 30

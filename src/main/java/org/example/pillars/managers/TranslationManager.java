@@ -13,12 +13,13 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.ThreadLocalRandom;
 
 public final class TranslationManager {
     private static final String DEFAULT_LANGUAGE = "en";
     private static final Set<String> SUPPORTED_LANGUAGES = Set.of("en", "ru");
     private static final Set<String> PLAYER_FACING_SECTIONS = Set.of(
-            "plugin", "welcome-v2", "welcome-v3", "lobby-items", "admin-item", "game-items",
+            "plugin", "lobby-items", "admin-item", "game-items",
             "scoreboard", "titles", "action-bar", "messages", "rarities", "units",
             "arena-view", "menus"
     );
@@ -60,6 +61,17 @@ public final class TranslationManager {
         return language;
     }
 
+    public String displayName(String identifier) {
+        if (identifier == null) return "";
+
+        return identifier
+                .replace('_', ' ')
+                .replace('-', ' ')
+                .replaceAll("\\s+", " ")
+                .trim()
+                .toLowerCase(Locale.ROOT);
+    }
+
     public String text(String key, Object... placeholders) {
         String value = selected.getString(key);
         if (value == null) {
@@ -76,28 +88,41 @@ public final class TranslationManager {
             return key;
         }
 
-        return format(styleTemplate(key, value), placeholders);
+        return format(decorateChatLine(key, styleTemplate(key, value), true), placeholders);
     }
 
     public List<String> list(String key, Object... placeholders) {
-        List<String> values = selected.isList(key) ? selected.getStringList(key) : null;
-        if (values == null) {
-            values = defaultSelected.isList(key) ? defaultSelected.getStringList(key) : null;
-        }
-        if (values == null) {
-            values = english.isList(key) ? english.getStringList(key) : null;
-        }
-        if (values == null) {
-            values = defaultEnglish.isList(key) ? defaultEnglish.getStringList(key) : null;
-        }
+        List<String> values = resolveList(key);
         if (values == null) {
             reportMissingKey(key);
             return List.of(key);
         }
 
-        return values.stream()
-                .map(value -> format(styleTemplate(key, value), placeholders))
-                .toList();
+        List<String> formatted = new java.util.ArrayList<>(values.size());
+        for (int i = 0; i < values.size(); i++) {
+            String styled = styleTemplate(key, values.get(i));
+            formatted.add(format(decorateChatLine(key, styled, i == 0), placeholders));
+        }
+        return List.copyOf(formatted);
+    }
+
+    public String randomText(String key, Object... placeholders) {
+        List<String> values = resolveList(key);
+        if (values == null || values.isEmpty()) {
+            reportMissingKey(key);
+            return key;
+        }
+
+        String value = values.get(ThreadLocalRandom.current().nextInt(values.size()));
+        return format(decorateChatLine(key, styleTemplate(key, value), true), placeholders);
+    }
+
+    private List<String> resolveList(String key) {
+        if (selected.isList(key)) return selected.getStringList(key);
+        if (defaultSelected.isList(key)) return defaultSelected.getStringList(key);
+        if (english.isList(key)) return english.getStringList(key);
+        if (defaultEnglish.isList(key)) return defaultEnglish.getStringList(key);
+        return null;
     }
 
     public String plural(String key, int amount, Object... placeholders) {
@@ -139,13 +164,28 @@ public final class TranslationManager {
         }
 
         if (key.equals("scoreboard.title")) {
-            return "&6&l◆";
+            return "&6&lPILLARS";
         }
 
-        return value
-                .replaceAll("(?i)&6&lpillars &8»\\s*", "&8› ")
+        String styled = value
+                .replaceAll("(?i)^\\s*&6&lpillars &8»\\s*", "")
                 .replaceAll("(?i)/pillars\\b", "/p")
-                .toLowerCase(Locale.ROOT);
+                .toLowerCase(Locale.ROOT)
+                .replace("pillars", "Pillars");
+
+        return section.equals("messages")
+                ? styled.replaceFirst("(?i)^\\s*&8›\\s*", "")
+                : styled;
+    }
+
+    private String decorateChatLine(String key, String value, boolean firstLine) {
+        if (!key.startsWith("messages.")) {
+            return value;
+        }
+
+        return firstLine
+                ? "&6&lPillars &8» &r" + value
+                : "&8  ↳ &r" + value;
     }
 
     private void saveLanguageFile(String languageCode) {

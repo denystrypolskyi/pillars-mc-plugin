@@ -52,11 +52,11 @@ public class AdminArenaListMenu implements InventoryHolder {
         if (arenas.isEmpty()) {
             inventory.setItem(22, ArenaMenuItemFactory.visualItem(
                     Material.BARRIER,
-                    translations.text("messages.arena-not-found"),
+                    translations.text("menus.arena-list.empty"),
                     List.of()
             ));
         } else {
-            ArenaMenuItemFactory.placeVerticalArenaItems(
+            ArenaMenuItemFactory.placeArenaItems(
                     inventory,
                     arenas,
                     arena -> ArenaMenuItemFactory.adminArenaItem(
@@ -65,8 +65,7 @@ public class AdminArenaListMenu implements InventoryHolder {
                             ACTION_KEY,
                             ARENA_KEY,
                             translations
-                    ),
-                    translations
+                    )
             );
         }
 

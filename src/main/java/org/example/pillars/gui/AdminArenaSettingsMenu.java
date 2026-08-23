@@ -17,6 +17,7 @@ import org.example.pillars.managers.GameSessionManager;
 import org.example.pillars.managers.HudManager;
 import org.example.pillars.managers.ItemManager;
 import org.example.pillars.managers.TranslationManager;
+import org.example.pillars.ui.UiPalette;
 
 import java.util.List;
 
@@ -52,9 +53,7 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
     }
 
     private void buildMenu() {
-        for (int i = 0; i < MENU_SIZE; i++) {
-            inventory.setItem(i, filler());
-        }
+        ArenaMenuItemFactory.fill(inventory, Material.BLACK_STAINED_GLASS_PANE);
 
         inventory.setItem(0, actionItem(
                 Material.ARROW,
@@ -145,16 +144,6 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
         }
     }
 
-    private ItemStack filler() {
-        ItemStack item = new ItemStack(Material.GRAY_STAINED_GLASS_PANE);
-        ItemMeta meta = item.getItemMeta();
-        if (meta != null) {
-            meta.setDisplayName(" ");
-            item.setItemMeta(meta);
-        }
-        return item;
-    }
-
     private ItemStack infoItem() {
         ItemStack item = new ItemStack(Material.WRITABLE_BOOK);
         ItemMeta meta = item.getItemMeta();
@@ -170,7 +159,7 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
         ItemStack item = new ItemStack(material);
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
-            meta.setDisplayName(name + " §f" + value);
+            meta.setDisplayName(name + " " + UiPalette.TEXT + value);
             meta.setLore(lore.length == 0
                     ? List.of(translations.text("menus.common.current-value"))
                     : List.of(lore));

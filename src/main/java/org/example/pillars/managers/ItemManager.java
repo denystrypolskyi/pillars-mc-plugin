@@ -214,11 +214,10 @@ public class ItemManager {
     }
 
     public int getDefaultWeight(String rarity) {
-        if (rarity == null) {
-            return 0;
-        }
+        String normalizedRarity = normalizeRarity(rarity);
+        if (normalizedRarity == null) return 0;
 
-        return switch (rarity.toLowerCase()) {
+        return switch (normalizedRarity) {
             case "common" -> 10;
             case "rare" -> 5;
             case "legendary" -> 1;
@@ -266,15 +265,15 @@ public class ItemManager {
         }
     }
 
-    private String normalizeRarity(String rarity) {
+    public String normalizeRarity(String rarity) {
         if (rarity == null) {
             return null;
         }
 
-        return switch (rarity.toLowerCase()) {
-            case "common" -> "common";
-            case "rare" -> "rare";
-            case "legendary" -> "legendary";
+        return switch (rarity.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "common", "обычный", "обычные" -> "common";
+            case "rare", "редкий", "редкие" -> "rare";
+            case "legendary", "легендарный", "легендарные" -> "legendary";
             default -> null;
         };
     }

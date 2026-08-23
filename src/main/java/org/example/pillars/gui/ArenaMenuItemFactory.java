@@ -10,6 +10,7 @@ import org.example.pillars.GameSession;
 import org.example.pillars.entities.Arena;
 import org.example.pillars.enums.GameState;
 import org.example.pillars.managers.TranslationManager;
+import org.example.pillars.ui.UiPalette;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -17,33 +18,12 @@ import java.util.List;
 import java.util.function.Function;
 
 final class ArenaMenuItemFactory {
-    private static final ArenaGroupLayout[] ARENA_GROUPS = {
-            new ArenaGroupLayout(
-                    4,
-                    "§a",
-                    Material.LIME_STAINED_GLASS_PANE,
-                    1,
-                    new int[]{0, 2, 9, 11, 18, 20, 27, 29, 36, 37, 38},
-                    new int[]{10, 19, 28}
-            ),
-            new ArenaGroupLayout(
-                    8,
-                    "§b",
-                    Material.LIGHT_BLUE_STAINED_GLASS_PANE,
-                    4,
-                    new int[]{3, 5, 12, 14, 21, 23, 30, 32, 39, 40, 41},
-                    new int[]{13, 22, 31}
-            ),
-            new ArenaGroupLayout(
-                    12,
-                    "§d",
-                    Material.PURPLE_STAINED_GLASS_PANE,
-                    7,
-                    new int[]{6, 8, 15, 17, 24, 26, 33, 35, 42, 43, 44},
-                    new int[]{16, 25, 34}
-            )
+    private static final int[] ARENA_SLOTS = {
+            10, 11, 12, 13, 14, 15, 16,
+            19, 20, 21, 22, 23, 24, 25,
+            28, 29, 30, 31, 32, 33, 34,
+            37, 38, 39, 40, 41, 42, 43
     };
-    private static final int[] OVERFLOW_SLOTS = {46, 47, 48, 49, 50, 51, 52, 53};
 
     private ArenaMenuItemFactory() {
     }
@@ -78,25 +58,24 @@ final class ArenaMenuItemFactory {
         return item;
     }
 
-    static void placeVerticalArenaItems(
+    static void placeArenaItems(
             Inventory inventory,
             List<Arena> arenas,
-            Function<Arena, ItemStack> itemFactory,
-            TranslationManager translations
+            Function<Arena, ItemStack> itemFactory
     ) {
-        List<List<Arena>> groupedArenas = groupArenasByCapacity(arenas);
-        List<Arena> overflow = new ArrayList<>();
+        placeIntoSlots(inventory, arenas, itemFactory, ARENA_SLOTS);
+    }
 
-        for (int i = 0; i < ARENA_GROUPS.length; i++) {
-            ArenaGroupLayout group = ARENA_GROUPS[i];
-            List<Arena> groupArenas = groupedArenas.get(i);
-
-            placeAccentPanes(inventory, group);
-            inventory.setItem(group.headerSlot(), groupHeader(group, translations));
-            overflow.addAll(placeIntoSlots(inventory, groupArenas, itemFactory, group.arenaSlots()));
+    static ItemStack quickJoinItem(NamespacedKey actionKey, TranslationManager translations) {
+        ItemStack item = new ItemStack(Material.NETHER_STAR);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.setDisplayName(translations.text("menus.arena-selection.quick-join"));
+            meta.setLore(translations.list("menus.arena-selection.quick-join-lore"));
+            meta.getPersistentDataContainer().set(actionKey, PersistentDataType.STRING, "quick-join");
+            item.setItemMeta(meta);
         }
-
-        placeIntoSlots(inventory, overflow, itemFactory, OVERFLOW_SLOTS);
+        return item;
     }
 
     static ItemStack playerArenaItem(
@@ -109,9 +88,13 @@ final class ArenaMenuItemFactory {
         ItemStack item = new ItemStack(view.material());
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
-            meta.setDisplayName(view.itemColor() + "§l" + arena.getDisplayName());
+            meta.setDisplayName(view.itemColor() + UiPalette.BOLD + arena.getDisplayName());
             meta.setLore(List.of(
-                    view.playerActionLore(translations),
+                    translations.text(
+                            "arena-view.capacity",
+                            "maximum", view.maxPlayers(),
+                            "players", translations.plural("units.player", view.maxPlayers())
+                    ),
                     "",
                     translations.text(
                             "arena-view.status",
@@ -127,7 +110,9 @@ final class ArenaMenuItemFactory {
                             "arena-view.starts-at",
                             "minimum", arena.getMinPlayers(),
                             "players", translations.plural("units.player-at", arena.getMinPlayers())
-                    )
+                    ),
+                    "",
+                    view.playerActionLore(translations)
             ));
             meta.getPersistentDataContainer().set(arenaKey, PersistentDataType.STRING, arena.getWorldName());
             item.setItemMeta(meta);
@@ -147,7 +132,11 @@ final class ArenaMenuItemFactory {
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
             List<String> lore = new ArrayList<>(List.of(
-                    translations.text("arena-view.edit-action"),
+                    translations.text(
+                            "arena-view.capacity",
+                            "maximum", view.maxPlayers(),
+                            "players", translations.plural("units.player", view.maxPlayers())
+                    ),
                     "",
                     translations.text(
                             "arena-view.status",
@@ -173,8 +162,10 @@ final class ArenaMenuItemFactory {
             if (!arena.isJoiningOpen()) {
                 lore.add(translations.text("arena-view.admin-lock"));
             }
+            lore.add("");
+            lore.add(translations.text("arena-view.edit-action"));
 
-            meta.setDisplayName(view.itemColor() + "§l" + arena.getDisplayName());
+            meta.setDisplayName(view.itemColor() + UiPalette.BOLD + arena.getDisplayName());
             meta.setLore(lore);
             meta.getPersistentDataContainer().set(actionKey, PersistentDataType.STRING, "edit");
             meta.getPersistentDataContainer().set(arenaKey, PersistentDataType.STRING, arena.getWorldName());
@@ -183,7 +174,7 @@ final class ArenaMenuItemFactory {
         return item;
     }
 
-    private static List<Arena> placeIntoSlots(
+    private static void placeIntoSlots(
             Inventory inventory,
             List<Arena> arenas,
             Function<Arena, ItemStack> itemFactory,
@@ -194,60 +185,6 @@ final class ArenaMenuItemFactory {
             inventory.setItem(slots[i], itemFactory.apply(arenas.get(i)));
         }
 
-        if (arenas.size() <= slots.length) {
-            return List.of();
-        }
-
-        return arenas.subList(slots.length, arenas.size());
-    }
-
-    private static List<List<Arena>> groupArenasByCapacity(List<Arena> arenas) {
-        List<Arena> fourPlayerArenas = new ArrayList<>();
-        List<Arena> eightPlayerArenas = new ArrayList<>();
-        List<Arena> twelvePlayerArenas = new ArrayList<>();
-
-        for (Arena arena : arenas) {
-            int size = arena.getSpawnPoints().size();
-            if (size <= 4) {
-                fourPlayerArenas.add(arena);
-            } else if (size <= 8) {
-                eightPlayerArenas.add(arena);
-            } else {
-                twelvePlayerArenas.add(arena);
-            }
-        }
-
-        return List.of(fourPlayerArenas, eightPlayerArenas, twelvePlayerArenas);
-    }
-
-    private static void placeAccentPanes(Inventory inventory, ArenaGroupLayout group) {
-        ItemStack pane = blankItem(group.paneMaterial());
-        for (int slot : group.accentSlots()) {
-            inventory.setItem(slot, pane);
-        }
-    }
-
-    private static ItemStack groupHeader(ArenaGroupLayout group, TranslationManager translations) {
-        int capacity = group.capacity();
-        return visualItem(
-                group.paneMaterial(),
-                group.color() + "§l" + capacity + " " + translations.plural("units.player", capacity),
-                List.of(translations.text(
-                        "arena-view.size",
-                        "maximum", capacity,
-                        "players", translations.plural("units.player", capacity)
-                ))
-        );
-    }
-
-    private static ItemStack blankItem(Material material) {
-        ItemStack item = new ItemStack(material);
-        ItemMeta meta = item.getItemMeta();
-        if (meta != null) {
-            meta.setDisplayName(" ");
-            item.setItemMeta(meta);
-        }
-        return item;
     }
 
     private record ArenaView(
@@ -282,10 +219,10 @@ final class ArenaMenuItemFactory {
 
         String stateColor() {
             return switch (state) {
-                case WAITING -> "§a";
-                case STARTING, COUNTDOWN -> "§e";
-                case RUNNING -> "§c";
-                case ENDING, RESETTING -> "§7";
+                case WAITING -> UiPalette.SUCCESS;
+                case STARTING, COUNTDOWN -> UiPalette.PRIMARY;
+                case RUNNING -> UiPalette.DANGER;
+                case ENDING, RESETTING -> UiPalette.MUTED;
             };
         }
 
@@ -328,55 +265,40 @@ final class ArenaMenuItemFactory {
         Material material() {
             if (!joinable) {
                 if (full || state == GameState.RUNNING) {
-                    return Material.RED_CONCRETE;
+                    return Material.RED_DYE;
                 }
 
                 if (state == GameState.ENDING || state == GameState.RESETTING) {
-                    return Material.GRAY_CONCRETE;
+                    return Material.GRAY_DYE;
                 }
 
                 return Material.BARRIER;
             }
 
             if (state == GameState.STARTING || state == GameState.COUNTDOWN) {
-                return Material.YELLOW_CONCRETE;
+                return Material.YELLOW_DYE;
             }
 
-            if (maxPlayers <= 4) {
-                return Material.LIME_CONCRETE;
-            }
-
-            if (maxPlayers <= 8) {
-                return Material.CYAN_CONCRETE;
-            }
-
-            return Material.PURPLE_CONCRETE;
+            return Material.LIME_DYE;
         }
 
         String itemColor() {
             if (joinable) {
-                return state == GameState.STARTING || state == GameState.COUNTDOWN ? "§e" : "§a";
+                return state == GameState.STARTING || state == GameState.COUNTDOWN
+                        ? UiPalette.PRIMARY
+                        : UiPalette.SUCCESS;
             }
 
             if (full || state == GameState.RUNNING) {
-                return "§c";
+                return UiPalette.DANGER;
             }
 
             if (state == GameState.ENDING || state == GameState.RESETTING) {
-                return "§7";
+                return UiPalette.MUTED;
             }
 
-            return "§c";
+            return UiPalette.DANGER;
         }
     }
 
-    private record ArenaGroupLayout(
-            int capacity,
-            String color,
-            Material paneMaterial,
-            int headerSlot,
-            int[] accentSlots,
-            int[] arenaSlots
-    ) {
-    }
 }

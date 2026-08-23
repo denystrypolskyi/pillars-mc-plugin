@@ -4,6 +4,7 @@ import org.bukkit.Material;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
+import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.example.pillars.entities.Arena;
@@ -14,7 +15,14 @@ import org.example.pillars.managers.GameSessionManager;
 import org.example.pillars.managers.HudManager;
 import org.example.pillars.managers.ItemManager;
 
-public class PillarsCommand implements CommandExecutor {
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Locale;
+
+public class PillarsCommand implements CommandExecutor, TabCompleter {
 
     private final ArenaManager arenaManager;
     private final GameSessionManager gameSessionManager;
@@ -36,23 +44,26 @@ public class PillarsCommand implements CommandExecutor {
     @Override
     public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
 
-        if (!(sender instanceof Player player)) return true;
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(hudManager.getTranslations().text("messages.player-only"));
+            return true;
+        }
         if (args.length < 1) {
-            hudManager.sendCommandUsage(player);
+            openArenaMenu(player);
             return true;
         }
 
-        switch (args[0].toLowerCase()) {
-
+        switch (args[0].toLowerCase(Locale.ROOT)) {
             case "join" -> {
                 if (args.length < 2) {
                     hudManager.sendJoinUsage(player);
                     return true;
                 }
 
-                Arena arena = arenaManager.getArena(args[1]);
+                String arenaName = String.join(" ", Arrays.copyOfRange(args, 1, args.length));
+                Arena arena = arenaManager.findArena(arenaName);
                 if (arena == null) {
-                    hudManager.sendArenaNotFound(player);
+                    hudManager.sendArenaNotFound(player, arenaName);
                     return true;
                 }
 
@@ -60,6 +71,11 @@ public class PillarsCommand implements CommandExecutor {
             }
 
             case "quickjoin", "joinactive" -> {
+                if (args.length != 1) {
+                    hudManager.sendCommandSyntax(player, "/p quickjoin");
+                    return true;
+                }
+
                 Arena arena = gameSessionManager.findQuickJoinArena();
 
                 if (arena == null) {
@@ -70,12 +86,37 @@ public class PillarsCommand implements CommandExecutor {
                 gameSessionManager.joinSession(player, arena);
             }
 
-            case "leave" -> gameSessionManager.leaveSession(player);
+            case "leave" -> {
+                if (args.length != 1) {
+                    hudManager.sendCommandSyntax(player, "/p leave");
+                    return true;
+                }
+                gameSessionManager.leaveSession(player);
+            }
 
-            case "forcestart", "forceststart" -> gameSessionManager.forceStartSession(player);
+            case "forcestart" -> {
+                if (args.length != 1) {
+                    hudManager.sendCommandSyntax(player, "/p forcestart");
+                    return true;
+                }
+                gameSessionManager.forceStartSession(player);
+            }
+
+            case "events" -> {
+                if (args.length != 1) {
+                    hudManager.sendCommandSyntax(player, "/p events");
+                    return true;
+                }
+                hudManager.sendGameEventList(player);
+            }
 
             case "event" -> {
                 if (args.length < 2) {
+                    hudManager.sendGameEventUsage(player);
+                    return true;
+                }
+
+                if (args.length != 2) {
                     hudManager.sendGameEventUsage(player);
                     return true;
                 }
@@ -89,15 +130,20 @@ public class PillarsCommand implements CommandExecutor {
             }
 
             case "menu" -> {
-                new ArenaMenu(
-                        player,
-                        arenaManager,
-                        gameSessionManager,
-                        hudManager
-                ).open();
+                if (args.length != 1) {
+                    hudManager.sendCommandSyntax(player, "/p menu");
+                    return true;
+                }
+
+                openArenaMenu(player);
             }
 
             case "admin" -> {
+                if (args.length != 1) {
+                    hudManager.sendCommandSyntax(player, "/p admin");
+                    return true;
+                }
+
                 if (!player.hasPermission("pillars.admin")) {
                     hudManager.sendNoPermission(player);
                     return true;
@@ -112,9 +158,31 @@ public class PillarsCommand implements CommandExecutor {
                     return true;
                 }
 
-                if (args.length < 2) {
+                if (args.length < 2 || args.length > 3) {
                     hudManager.sendItemAddUsage(player);
                     return true;
+                }
+
+                String rarity = itemManager.normalizeRarity(args[1]);
+                if (rarity == null) {
+                    hudManager.sendUnknownRarity(player, args[1]);
+                    return true;
+                }
+
+                int weight = itemManager.getDefaultWeight(rarity);
+
+                if (args.length >= 3) {
+                    try {
+                        weight = Integer.parseInt(args[2]);
+                    } catch (NumberFormatException ignored) {
+                        hudManager.sendInvalidWeight(player, args[2]);
+                        return true;
+                    }
+
+                    if (weight <= 0) {
+                        hudManager.sendInvalidWeight(player, args[2]);
+                        return true;
+                    }
                 }
 
                 ItemStack heldItem = player.getInventory().getItemInMainHand();
@@ -123,23 +191,8 @@ public class PillarsCommand implements CommandExecutor {
                     return true;
                 }
 
-                int weight = itemManager.getDefaultWeight(args[1]);
-                if (weight <= 0) {
-                    hudManager.sendItemAddUsage(player);
-                    return true;
-                }
-
-                if (args.length >= 3) {
-                    try {
-                        weight = Integer.parseInt(args[2]);
-                    } catch (NumberFormatException ignored) {
-                        hudManager.sendItemAddUsage(player);
-                        return true;
-                    }
-                }
-
-                if (itemManager.setCustomItemWeight(args[1], heldItem.getType(), weight)) {
-                    hudManager.sendItemConfigured(player, heldItem.getType(), args[1], weight);
+                if (itemManager.setCustomItemWeight(rarity, heldItem.getType(), weight)) {
+                    hudManager.sendItemConfigured(player, heldItem.getType(), rarity, weight);
                 } else {
                     hudManager.sendItemAddUsage(player);
                 }
@@ -151,8 +204,14 @@ public class PillarsCommand implements CommandExecutor {
                     return true;
                 }
 
-                if (args.length < 2) {
+                if (args.length < 2 || args.length > 3) {
                     hudManager.sendItemRemoveUsage(player);
+                    return true;
+                }
+
+                String rarity = itemManager.normalizeRarity(args[1]);
+                if (rarity == null) {
+                    hudManager.sendUnknownRarity(player, args[1]);
                     return true;
                 }
 
@@ -160,7 +219,7 @@ public class PillarsCommand implements CommandExecutor {
                 if (args.length >= 3) {
                     material = Material.matchMaterial(args[2]);
                     if (material == null) {
-                        hudManager.sendUnknownMaterial(player);
+                        hudManager.sendUnknownMaterial(player, args[2]);
                         return true;
                     }
                 } else {
@@ -172,16 +231,76 @@ public class PillarsCommand implements CommandExecutor {
                     material = heldItem.getType();
                 }
 
-                if (itemManager.removeItem(args[1], material)) {
-                    hudManager.sendItemRemoved(player, material, args[1]);
+                if (itemManager.removeItem(rarity, material)) {
+                    hudManager.sendItemRemoved(player, material, rarity);
                 } else {
                     hudManager.sendItemRemoveUsage(player);
                 }
             }
 
-            default -> hudManager.sendCommandUsage(player);
+            default -> hudManager.sendUnknownCommand(player, args[0]);
         }
 
         return true;
+    }
+
+    @Override
+    public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+        if (!(sender instanceof Player player)) return List.of();
+
+        if (args.length == 1) {
+            List<String> commands = new ArrayList<>(List.of(
+                    "quickjoin", "join", "menu", "leave", "event", "events"
+            ));
+            if (player.hasPermission("pillars.forcestart")) commands.add("forcestart");
+            if (player.hasPermission("pillars.admin")) {
+                commands.add("admin");
+                commands.add("itemadd");
+                commands.add("itemremove");
+            }
+            return complete(args[0], commands);
+        }
+
+        String subcommand = args[0].toLowerCase(Locale.ROOT);
+        if (subcommand.equals("join")) {
+            Collection<String> arenas = arenaManager.getArenas().stream()
+                    .map(arena -> arena.getDisplayName().replace(' ', '-'))
+                    .toList();
+            return args.length == 2 ? complete(args[1], arenas) : List.of();
+        }
+
+        if (subcommand.equals("event") && args.length == 2) {
+            List<String> events = new ArrayList<>(List.of("next"));
+            if (player.hasPermission("pillars.admin")) {
+                events.addAll(List.of("smash", "cosmic", "meteor", "earthquake", "hunt", "potato", "lastbreath"));
+            }
+            return complete(args[1], events);
+        }
+
+        if ((subcommand.equals("itemadd") || subcommand.equals("itemremove"))
+                && player.hasPermission("pillars.admin")) {
+            if (args.length == 2) {
+                return complete(args[1], List.of("common", "rare", "legendary"));
+            }
+            if (subcommand.equals("itemremove") && args.length == 3) {
+                return complete(args[2], Arrays.stream(Material.values())
+                        .map(material -> material.name().toLowerCase(Locale.ROOT))
+                        .toList());
+            }
+        }
+
+        return List.of();
+    }
+
+    private void openArenaMenu(Player player) {
+        new ArenaMenu(player, arenaManager, gameSessionManager, hudManager).open();
+    }
+
+    private List<String> complete(String input, Collection<String> values) {
+        String normalizedInput = input.toLowerCase(Locale.ROOT);
+        return values.stream()
+                .filter(value -> value.toLowerCase(Locale.ROOT).startsWith(normalizedInput))
+                .sorted(Comparator.naturalOrder())
+                .toList();
     }
 }

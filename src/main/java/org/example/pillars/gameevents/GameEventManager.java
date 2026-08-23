@@ -25,6 +25,8 @@ public final class GameEventManager {
 
     private final JavaPlugin plugin;
     private final GameSession session;
+    private final HudManager hudManager;
+    private final SoundManager soundManager;
     private boolean automaticEventsEnabled;
     private final int minimumDelaySeconds;
     private final int maximumDelaySeconds;
@@ -52,6 +54,8 @@ public final class GameEventManager {
     ) {
         this.plugin = plugin;
         this.session = session;
+        this.hudManager = hudManager;
+        this.soundManager = soundManager;
         this.automaticEventsEnabled = plugin.getConfig().getBoolean("settings.gameEvents.enabled", true);
 
         int configuredMinimumDelay = Math.max(
@@ -403,6 +407,16 @@ public final class GameEventManager {
         activeEventEndTick = (long) Bukkit.getCurrentTick()
                 + activeEvent.getDurationSeconds() * TICKS_PER_SECOND;
         activeEvent.start();
+        hudManager.sendGameEventStartedTitle(session.getAllPlayerIds(), activeEvent.getId());
+
+        if (!activeEvent.getId().equals("last_breath")) {
+            for (java.util.UUID playerId : session.getAllPlayerIds()) {
+                Player player = Bukkit.getPlayer(playerId);
+                if (player != null && player.isOnline()) {
+                    soundManager.playGameEventStartSound(player);
+                }
+            }
+        }
 
         if (activeEvent.getDurationSeconds() > 0) {
             stopTask = plugin.getServer().getScheduler().runTaskLater(

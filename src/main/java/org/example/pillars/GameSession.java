@@ -8,6 +8,7 @@ import org.bukkit.util.Vector;
 import org.example.pillars.entities.Arena;
 import org.example.pillars.enums.ArenaResetResult;
 import org.example.pillars.enums.GameState;
+import org.example.pillars.enums.EliminationCause;
 import org.example.pillars.gameevents.GameEventManager;
 import org.example.pillars.gameevents.GameEventStatus;
 import org.example.pillars.gameevents.NextGameEventStatus;
@@ -43,6 +44,7 @@ public class GameSession {
     private BukkitTask beginGameCountdownTask;
     private BukkitTask waitingForPlayersTask;
     private BukkitTask itemDistributionTask;
+    private BukkitTask worldBorderShrinkTask;
     private BukkitTask finalEventStartDelayTask;
     private BukkitTask endGameCountdownStartDelayTask;
     private BukkitTask arenaResetDelayTask;
@@ -230,10 +232,10 @@ public class GameSession {
 
 
     public void playerDeath(Player dead, Player killer) {
-        playerDeath(dead, killer, false);
+        playerDeath(dead, killer, EliminationCause.OTHER);
     }
 
-    public void playerDeath(Player dead, Player killer, boolean fellIntoVoid) {
+    public void playerDeath(Player dead, Player killer, EliminationCause cause) {
         UUID uuid = dead.getUniqueId();
         if (!activePlayers.contains(uuid)) return;
 
@@ -243,7 +245,7 @@ public class GameSession {
         }
 
         rewardKiller(killer);
-        hudManager.broadcastElimination(dead, killer, arena.getDisplayName(), fellIntoVoid);
+        hudManager.broadcastElimination(dead, killer, arena.getDisplayName(), cause);
         gameEventManager.onPlayerEliminated(dead, killer);
 
         setPlayerAsSpectator(dead);
@@ -856,15 +858,29 @@ public class GameSession {
         border.setWarningDistance(0);
         border.setWarningTime(0);
 
-        border.setSize(borderMinSize, borderShrinkSeconds);
         borderShrinkEndTimeMillis = System.currentTimeMillis() + (borderShrinkSeconds * 1000L);
         borderShrinkBlocksPerSecond = Math.max(0.0, (initialSize - borderMinSize) / borderShrinkSeconds);
+        startCalmWorldBorderShrink(border);
 
         finalEventStartDelayTask = Bukkit.getScheduler().runTaskLater(
                 plugin,
                 gameEventManager::startLastBreathEvent,
                 borderShrinkSeconds * 20L
         );
+    }
+
+    private void startCalmWorldBorderShrink(WorldBorder border) {
+        cancelWorldBorderShrinkTask();
+
+        worldBorderShrinkTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            long remainingMillis = Math.max(0L, borderShrinkEndTimeMillis - System.currentTimeMillis());
+            double nextSize = borderMinSize + (borderShrinkBlocksPerSecond * remainingMillis / 1000.0);
+            border.setSize(Math.max(borderMinSize, nextSize));
+
+            if (remainingMillis == 0L) {
+                cancelWorldBorderShrinkTask();
+            }
+        }, 1L, 1L);
     }
 
 
@@ -880,6 +896,13 @@ public class GameSession {
         if (finalEventStartDelayTask != null) {
             finalEventStartDelayTask.cancel();
             finalEventStartDelayTask = null;
+        }
+    }
+
+    private void cancelWorldBorderShrinkTask() {
+        if (worldBorderShrinkTask != null) {
+            worldBorderShrinkTask.cancel();
+            worldBorderShrinkTask = null;
         }
     }
 
@@ -920,6 +943,7 @@ public class GameSession {
     }
 
     private void stopWorldBorder() {
+        cancelWorldBorderShrinkTask();
         borderShrinkEndTimeMillis = -1L;
         borderShrinkBlocksPerSecond = 0.0;
         if (!arena.getSpawnPoints().isEmpty()) {

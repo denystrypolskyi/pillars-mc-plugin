@@ -53,6 +53,15 @@ public class SoundManager {
         );
     }
 
+    public void playGameEventStartSound(Player player) {
+        player.playSound(
+                player.getLocation(),
+                Sound.BLOCK_NOTE_BLOCK_PLING,
+                0.45f,
+                1.2f
+        );
+    }
+
     public void playWinSound(Player player) {
         player.playSound(
                 player.getLocation(),
@@ -72,6 +81,6 @@ public class SoundManager {
     }
 
     public void playLastBreathStartSound(Player player) {
-        player.playSound(player.getLocation(), Sound.ENTITY_WITHER_SPAWN, 1.0f, 1.0f);
+        player.playSound(player.getLocation(), Sound.ENTITY_WITHER_SPAWN, 0.8f, 1.0f);
     }
 }

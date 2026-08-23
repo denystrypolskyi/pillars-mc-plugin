@@ -15,10 +15,10 @@ import org.example.pillars.managers.GameSessionManager;
 import org.example.pillars.managers.HudManager;
 import org.example.pillars.managers.ItemManager;
 import org.example.pillars.managers.TranslationManager;
+import org.example.pillars.ui.UiPalette;
 
 import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 public class AdminItemPoolMenu implements InventoryHolder {
@@ -58,9 +58,7 @@ public class AdminItemPoolMenu implements InventoryHolder {
     }
 
     private void buildMenu() {
-        for (int i = 0; i < MENU_SIZE; i++) {
-            inventory.setItem(i, filler());
-        }
+        ArenaMenuItemFactory.fill(inventory, Material.BLACK_STAINED_GLASS_PANE);
 
         inventory.setItem(0, actionItem(
                 Material.ARROW,
@@ -119,16 +117,6 @@ public class AdminItemPoolMenu implements InventoryHolder {
         }
     }
 
-    private ItemStack filler() {
-        ItemStack item = new ItemStack(Material.BLACK_STAINED_GLASS_PANE);
-        ItemMeta meta = item.getItemMeta();
-        if (meta != null) {
-            meta.setDisplayName(" ");
-            item.setItemMeta(meta);
-        }
-        return item;
-    }
-
     private ItemStack infoItem() {
         ItemStack item = new ItemStack(Material.BOOK);
         ItemMeta meta = item.getItemMeta();
@@ -144,7 +132,7 @@ public class AdminItemPoolMenu implements InventoryHolder {
         ItemStack item = new ItemStack(material);
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
-            meta.setDisplayName("§f" + material.name().toLowerCase(Locale.ROOT).replace('_', ' '));
+            meta.setDisplayName(UiPalette.TEXT + translations.displayName(material.name()));
             meta.setLore(List.of(
                     translations.text("menus.item-pool.weight", "weight", weight),
                     translations.text("menus.item-pool.disable")
@@ -245,7 +233,7 @@ public class AdminItemPoolMenu implements InventoryHolder {
         String materialName = meta.getPersistentDataContainer().get(MATERIAL_KEY, PersistentDataType.STRING);
         Material material = Material.matchMaterial(materialName == null ? "" : materialName);
         if (material == null) {
-            hudManager.sendUnknownMaterial(clicker);
+            hudManager.sendUnknownMaterial(clicker, materialName == null ? "?" : materialName);
             return;
         }
 

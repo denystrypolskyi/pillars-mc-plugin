@@ -32,6 +32,21 @@ public class ArenaManager {
         return arenas.get(worldName);
     }
 
+    public Arena findArena(String name) {
+        if (name == null || name.isBlank()) return null;
+
+        Arena exactWorld = arenas.get(name);
+        if (exactWorld != null) return exactWorld;
+
+        String normalized = translations.displayName(name);
+        return arenas.values().stream()
+                .filter(arena -> arena.getWorldName().equalsIgnoreCase(name)
+                        || arena.getConfigKey().equalsIgnoreCase(name)
+                        || arena.getDisplayName().equalsIgnoreCase(normalized))
+                .findFirst()
+                .orElse(null);
+    }
+
     public void loadArenas() {
         arenas.clear();
 
@@ -339,7 +354,7 @@ public class ArenaManager {
         if (localizedName == null || localizedName.isBlank()) {
             localizedName = section.getString("displayName", worldName);
         }
-        return localizedName.toLowerCase(Locale.ROOT);
+        return translations.displayName(localizedName);
     }
 
 }

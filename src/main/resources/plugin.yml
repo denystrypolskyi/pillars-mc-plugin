@@ -5,7 +5,7 @@ api-version: 1.21
 commands:
   pillars:
     description: main game command
-    usage: /<command> <join|quickjoin|leave|forcestart|event|menu|admin>
+    usage: /<command>
     aliases: [p]
 permissions:
   pillars.forcestart:

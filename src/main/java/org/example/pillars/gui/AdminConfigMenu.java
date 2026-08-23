@@ -15,6 +15,7 @@ import org.example.pillars.managers.GameSessionManager;
 import org.example.pillars.managers.HudManager;
 import org.example.pillars.managers.ItemManager;
 import org.example.pillars.managers.TranslationManager;
+import org.example.pillars.ui.UiPalette;
 
 import java.util.List;
 
@@ -41,9 +42,7 @@ public class AdminConfigMenu implements InventoryHolder {
     }
 
     private void buildMenu() {
-        for (int i = 0; i < MENU_SIZE; i++) {
-            inventory.setItem(i, filler());
-        }
+        ArenaMenuItemFactory.fill(inventory, Material.BLACK_STAINED_GLASS_PANE);
 
         inventory.setItem(4, infoItem());
         inventory.setItem(0, actionItem(Material.ARROW, translations.text("menus.common.back"), "back"));
@@ -54,27 +53,17 @@ public class AdminConfigMenu implements InventoryHolder {
 
         inventory.setItem(9, actionItem(Material.RED_DYE, translations.text("menus.rarity.decrease-five", "rarity", legendary), "legendary:-5"));
         inventory.setItem(10, actionItem(Material.REDSTONE, translations.text("menus.rarity.decrease-one", "rarity", legendary), "legendary:-1"));
-        inventory.setItem(11, displayItem(Material.NETHERITE_BLOCK, "§6" + legendary, itemManager.getLegendaryPercent()));
+        inventory.setItem(11, displayItem(Material.NETHERITE_BLOCK, UiPalette.BRAND + legendary, itemManager.getLegendaryPercent()));
         inventory.setItem(12, actionItem(Material.GLOWSTONE_DUST, translations.text("menus.rarity.increase-one", "rarity", legendary), "legendary:1"));
         inventory.setItem(13, actionItem(Material.LIME_DYE, translations.text("menus.rarity.increase-five", "rarity", legendary), "legendary:5"));
 
         inventory.setItem(18, actionItem(Material.ORANGE_DYE, translations.text("menus.rarity.decrease-five", "rarity", rare), "rare:-5"));
         inventory.setItem(19, actionItem(Material.COPPER_INGOT, translations.text("menus.rarity.decrease-one", "rarity", rare), "rare:-1"));
-        inventory.setItem(20, displayItem(Material.OBSIDIAN, "§b" + rare, itemManager.getRarePercent()));
+        inventory.setItem(20, displayItem(Material.OBSIDIAN, UiPalette.INFO + rare, itemManager.getRarePercent()));
         inventory.setItem(21, actionItem(Material.LAPIS_LAZULI, translations.text("menus.rarity.increase-one", "rarity", rare), "rare:1"));
         inventory.setItem(22, actionItem(Material.EMERALD, translations.text("menus.rarity.increase-five", "rarity", rare), "rare:5"));
 
-        inventory.setItem(16, displayItem(Material.STONE, "§7" + common, itemManager.getCommonPercent()));
-    }
-
-    private ItemStack filler() {
-        ItemStack item = new ItemStack(Material.GRAY_STAINED_GLASS_PANE);
-        ItemMeta meta = item.getItemMeta();
-        if (meta != null) {
-            meta.setDisplayName(" ");
-            item.setItemMeta(meta);
-        }
-        return item;
+        inventory.setItem(16, displayItem(Material.STONE, UiPalette.TEXT + common, itemManager.getCommonPercent()));
     }
 
     private ItemStack infoItem() {
@@ -92,7 +81,7 @@ public class AdminConfigMenu implements InventoryHolder {
         ItemStack item = new ItemStack(material);
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
-            meta.setDisplayName(name + " §f" + percent + "%");
+            meta.setDisplayName(name + " " + UiPalette.TEXT + percent + "%");
             meta.setLore(List.of(translations.text("menus.rarity.current-chance")));
             item.setItemMeta(meta);
         }

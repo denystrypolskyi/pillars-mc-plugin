@@ -66,7 +66,9 @@ public final class PillarsPlugin extends JavaPlugin {
                 "pillars.admin",
                 translationManager.text("plugin.admin-permission-description")
         );
-        pillarsCommand.setExecutor(new PillarsCommand(arenaManager, gameSessionManager, hudManager, itemManager));
+        PillarsCommand commandExecutor = new PillarsCommand(arenaManager, gameSessionManager, hudManager, itemManager);
+        pillarsCommand.setExecutor(commandExecutor);
+        pillarsCommand.setTabCompleter(commandExecutor);
     }
 
     private void setPermissionDescription(String permissionName, String description) {

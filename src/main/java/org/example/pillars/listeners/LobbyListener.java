@@ -12,7 +12,6 @@ import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
-import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.player.PlayerSwapHandItemsEvent;
 import org.bukkit.inventory.EquipmentSlot;
@@ -56,18 +55,7 @@ public class LobbyListener implements Listener {
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
-        event.setJoinMessage(hudManager.serverJoinMessage(player));
         playerManager.resetAndReturnToLobby(player);
-        Bukkit.getScheduler().runTask(plugin, () -> {
-            if (player.isOnline()) {
-                hudManager.sendOnboarding(player);
-            }
-        });
-    }
-
-    @EventHandler
-    public void onPlayerQuit(PlayerQuitEvent event) {
-        event.setQuitMessage(hudManager.serverQuitMessage(event.getPlayer()));
     }
 
     @EventHandler

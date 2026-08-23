@@ -6,8 +6,10 @@ import org.bukkit.entity.Player;
 import org.bukkit.scoreboard.*;
 import org.example.pillars.entities.Arena;
 import org.example.pillars.enums.GameState;
+import org.example.pillars.enums.EliminationCause;
 import org.example.pillars.gameevents.GameEventStatus;
 import org.example.pillars.gameevents.NextGameEventStatus;
+import org.example.pillars.ui.UiPalette;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
@@ -100,24 +102,26 @@ public class HudManager {
         teams.get("infoHeader").setPrefix(translations.text("scoreboard.info-header"));
 
         teams.get("playerLine").setPrefix(translations.text("scoreboard.player-label"));
-        teams.get("playerLine").setSuffix("§a" + player.getName());
+        teams.get("playerLine").setSuffix(UiPalette.TEXT + player.getName());
 
         teams.get("onlineLine").setPrefix(translations.text("scoreboard.online-label"));
-        teams.get("onlineLine").setSuffix("§b" + players + "§7/§b" + maxPlayers);
+        teams.get("onlineLine").setSuffix(
+                UiPalette.TEXT + players + UiPalette.SEPARATOR + "/" + UiPalette.TEXT + maxPlayers
+        );
 
         teams.get("statusLine").setPrefix(translations.text("scoreboard.status-label"));
         teams.get("statusLine").setSuffix(formatState(state));
 
         teams.get("arenaLine").setPrefix(translations.text("scoreboard.arena-label"));
-        teams.get("arenaLine").setSuffix("§e" + arenaName);
+        teams.get("arenaLine").setSuffix(UiPalette.TEXT + arenaName);
 
         teams.get("statHeader").setPrefix(translations.text("scoreboard.stats-header"));
 
         teams.get("killsLine").setPrefix(translations.text("scoreboard.kills-label"));
-        teams.get("killsLine").setSuffix("§4" + kills);
+        teams.get("killsLine").setSuffix(UiPalette.DANGER + kills);
 
         teams.get("winsLine").setPrefix(translations.text("scoreboard.wins-label"));
-        teams.get("winsLine").setSuffix("§6" + wins);
+        teams.get("winsLine").setSuffix(UiPalette.BRAND + wins);
     }
 
     public void updateArenaInfoForAllPlayers(Set<UUID> playersSet, int activeCount, int max, GameState state, String arenaName) {
@@ -130,7 +134,9 @@ public class HudManager {
 
             Team online = teams.get("onlineLine");
             if (online != null) {
-                online.setSuffix("§b" + activeCount + "§7/§b" + max);
+                online.setSuffix(
+                        UiPalette.TEXT + activeCount + UiPalette.SEPARATOR + "/" + UiPalette.TEXT + max
+                );
             }
 
             Team status = teams.get("statusLine");
@@ -140,7 +146,7 @@ public class HudManager {
 
             Team arena = teams.get("arenaLine");
             if (arena != null) {
-                arena.setSuffix("§e" + arenaName);
+                arena.setSuffix(UiPalette.TEXT + arenaName);
             }
         }
     }
@@ -152,12 +158,12 @@ public class HudManager {
 
         Team killsTeam = teams.get("killsLine");
         if (killsTeam != null) {
-            killsTeam.setSuffix("§4" + kills);
+            killsTeam.setSuffix(UiPalette.DANGER + kills);
         }
 
         Team winsTeam = teams.get("winsLine");
         if (winsTeam != null) {
-            winsTeam.setSuffix("§6" + wins);
+            winsTeam.setSuffix(UiPalette.BRAND + wins);
         }
     }
 
@@ -210,6 +216,23 @@ public class HudManager {
                 LONG_STAY,
                 FADE_OUT
         );
+    }
+
+    public void sendGameEventStartedTitle(Set<UUID> playerIds, String eventId) {
+        String eventName = translations.text("game-events." + eventId);
+
+        for (UUID uuid : playerIds) {
+            Player player = Bukkit.getPlayer(uuid);
+            if (player == null || !player.isOnline()) continue;
+
+            player.sendTitle(
+                    translations.text("titles.game-event-start.title"),
+                    translations.text("titles.game-event-start.subtitle", "event", eventName),
+                    FADE_IN,
+                    MEDIUM_STAY,
+                    FADE_OUT
+            );
+        }
     }
 
     public void sendSuperSmashBrosStarted(Set<UUID> playerIds, int durationSeconds, double multiplier) {
@@ -488,12 +511,8 @@ public class HudManager {
         );
     }
 
-    public void sendArenaNotFound(Player player) {
-        player.sendMessage(translations.text("messages.arena-not-found"));
-    }
-
-    public void sendOnboarding(Player player) {
-        translations.list("welcome-v3").forEach(player::sendMessage);
+    public void sendArenaNotFound(Player player, String arenaName) {
+        sendTranslatedList(player, "messages.arena-not-found", "arena", arenaName);
     }
 
     public void sendLeftArena(Player player) {
@@ -530,14 +549,6 @@ public class HudManager {
         ));
     }
 
-    public String serverJoinMessage(Player player) {
-        return translations.text("messages.server-join", "player", player.getName());
-    }
-
-    public String serverQuitMessage(Player player) {
-        return translations.text("messages.server-quit", "player", player.getName());
-    }
-
     public void broadcastForceStartedArena(Player player, String arenaName) {
         Bukkit.broadcastMessage(translations.text(
                 "messages.force-started",
@@ -562,33 +573,41 @@ public class HudManager {
         Bukkit.broadcastMessage(translations.text("messages.no-winner", "arena", arenaName));
     }
 
-    public void broadcastElimination(Player victim, Player killer, String arenaName, boolean fellIntoVoid) {
-        if (killer != null && !killer.getUniqueId().equals(victim.getUniqueId())) {
-            String key = fellIntoVoid ? "messages.void-kill" : "messages.player-kill";
-            Bukkit.broadcastMessage(translations.text(
-                    key,
-                    "victim", victim.getName(),
-                    "killer", killer.getName(),
-                    "arena", arenaName
-            ));
-            return;
-        }
+    public void broadcastElimination(Player victim, Player killer, String arenaName, EliminationCause cause) {
+        boolean creditedKill = killer != null && !killer.getUniqueId().equals(victim.getUniqueId());
+        String key = "messages.eliminations." + eliminationPool(cause, creditedKill);
 
-        if (fellIntoVoid) {
-            List<String> messages = translations.list(
-                    "messages.void-falls",
-                    "victim", victim.getName(),
-                    "arena", arenaName
-            );
-            Bukkit.broadcastMessage(messages.get(java.util.concurrent.ThreadLocalRandom.current().nextInt(messages.size())));
-            return;
-        }
-
-        Bukkit.broadcastMessage(translations.text(
-                "messages.eliminated",
+        Bukkit.broadcastMessage(translations.randomText(
+                key,
                 "victim", victim.getName(),
+                "killer", creditedKill ? killer.getName() : "",
                 "arena", arenaName
         ));
+    }
+
+    private String eliminationPool(EliminationCause cause, boolean creditedKill) {
+        if (creditedKill) {
+            return switch (cause) {
+                case VOID -> "void-kills";
+                case MELEE -> "melee-kills";
+                case PROJECTILE -> "projectile-kills";
+                case EXPLOSION -> "explosion-kills";
+                case FIRE -> "fire-kills";
+                case LAVA -> "lava-kills";
+                case FALL -> "fall-kills";
+                case OTHER -> "generic-kills";
+            };
+        }
+
+        return switch (cause) {
+            case VOID -> "void-deaths";
+            case PROJECTILE -> "projectile-deaths";
+            case EXPLOSION -> "explosion-deaths";
+            case FIRE -> "fire-deaths";
+            case LAVA -> "lava-deaths";
+            case FALL -> "fall-deaths";
+            case MELEE, OTHER -> "generic-deaths";
+        };
     }
 
     public void sendNoWinnerTitle(Player player) {
@@ -605,12 +624,25 @@ public class HudManager {
         player.sendMessage(translations.text("messages.no-permission"));
     }
 
-    public void sendCommandUsage(Player player) {
-        player.sendMessage(translations.text("messages.command-usage"));
+    public void sendUnknownCommand(Player player, String command) {
+        sendTranslatedList(player, "messages.unknown-command", "command", command);
+    }
+
+    public void sendCommandSyntax(Player player, String syntax) {
+        sendTranslatedList(player, "messages.command-syntax", "syntax", syntax);
     }
 
     public void sendGameEventUsage(Player player) {
-        player.sendMessage(translations.text("messages.game-event-usage"));
+        sendTranslatedList(
+                player,
+                player.hasPermission("pillars.admin")
+                        ? "messages.game-event-usage-admin"
+                        : "messages.game-event-usage"
+        );
+    }
+
+    public void sendGameEventList(Player player) {
+        sendTranslatedList(player, "messages.game-event-list");
     }
 
     public void sendGameEventUnavailable(Player player) {
@@ -622,7 +654,7 @@ public class HudManager {
     }
 
     public void sendUnknownGameEvent(Player player, String eventId) {
-        player.sendMessage(translations.text("messages.game-event-unknown", "event", eventId));
+        sendTranslatedList(player, "messages.game-event-unknown", "event", eventId);
     }
 
     public void sendNextGameEvent(Player player, NextGameEventStatus status) {
@@ -668,7 +700,7 @@ public class HudManager {
     }
 
     public void sendJoinUsage(Player player) {
-        player.sendMessage(translations.text("messages.join-usage"));
+        sendTranslatedList(player, "messages.join-usage");
     }
 
     public void sendNoJoinableSession(Player player) {
@@ -676,21 +708,33 @@ public class HudManager {
     }
 
     public void sendItemAddUsage(Player player) {
-        player.sendMessage(translations.text("messages.item-add-usage"));
-        player.sendMessage(translations.text("messages.item-add-advanced"));
+        sendTranslatedList(player, "messages.item-add-usage");
     }
 
     public void sendItemRemoveUsage(Player player) {
-        player.sendMessage(translations.text("messages.item-remove-usage"));
-        player.sendMessage(translations.text("messages.item-remove-advanced"));
+        sendTranslatedList(player, "messages.item-remove-usage");
+    }
+
+    private void sendTranslatedList(Player player, String key, Object... placeholders) {
+        for (String line : translations.list(key, placeholders)) {
+            player.sendMessage(line);
+        }
     }
 
     public void sendHoldItemToConfigure(Player player) {
         player.sendMessage(translations.text("messages.hold-item"));
     }
 
-    public void sendUnknownMaterial(Player player) {
-        player.sendMessage(translations.text("messages.unknown-material"));
+    public void sendUnknownMaterial(Player player, String material) {
+        sendTranslatedList(player, "messages.unknown-material", "material", material);
+    }
+
+    public void sendUnknownRarity(Player player, String rarity) {
+        sendTranslatedList(player, "messages.unknown-rarity", "rarity", rarity);
+    }
+
+    public void sendInvalidWeight(Player player, String weight) {
+        sendTranslatedList(player, "messages.invalid-weight", "weight", weight);
     }
 
     public void sendItemConfigured(Player player, Material material, String rarity, int weight) {

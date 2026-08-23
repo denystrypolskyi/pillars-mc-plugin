@@ -37,6 +37,7 @@ Configuration is stored in `plugins/PillarsPlugin/`:
 ## Commands
 
 `/pillars` and `/p` are interchangeable.
+Running `/p` without arguments opens the arena menu. Tab completion exposes the available commands and arguments.
 
 | Command | Purpose |
 | --- | --- |
@@ -47,6 +48,7 @@ Configuration is stored in `plugins/PillarsPlugin/`:
 | `/p forcestart` | Force-start the current match |
 | `/p admin` | Open admin controls |
 | `/p event <name>` | Start an event manually |
+| `/p events` | Show all available game events |
 | `/p event next` | Show the next automatic event and its timer |
 | `/p itemadd <rarity> [weight]` | Add the held item to a pool |
 | `/p itemremove <rarity> [material]` | Remove an item from a pool |

@@ -15,6 +15,7 @@ import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.example.pillars.GameSession;
 import org.example.pillars.PillarsPlugin;
+import org.example.pillars.enums.EliminationCause;
 import org.example.pillars.enums.GameState;
 import org.example.pillars.managers.GameSessionManager;
 
@@ -60,8 +61,21 @@ public class GameSessionPlayerListener implements Listener {
 
             Player killer = resolveKiller(session, player, event);
 
-            session.playerDeath(player, killer);
+            session.playerDeath(player, killer, resolveEliminationCause(event));
         }
+    }
+
+    private EliminationCause resolveEliminationCause(EntityDamageEvent event) {
+        return switch (event.getCause()) {
+            case VOID -> EliminationCause.VOID;
+            case PROJECTILE -> EliminationCause.PROJECTILE;
+            case BLOCK_EXPLOSION, ENTITY_EXPLOSION -> EliminationCause.EXPLOSION;
+            case FIRE, FIRE_TICK, CAMPFIRE -> EliminationCause.FIRE;
+            case LAVA, HOT_FLOOR -> EliminationCause.LAVA;
+            case FALL -> EliminationCause.FALL;
+            case ENTITY_ATTACK, ENTITY_SWEEP_ATTACK -> EliminationCause.MELEE;
+            default -> EliminationCause.OTHER;
+        };
     }
 
     private Player resolveKiller(GameSession session,
@@ -112,7 +126,7 @@ public class GameSessionPlayerListener implements Listener {
                 killer = Bukkit.getPlayer(lastDamager);
             }
 
-            session.playerDeath(player, killer, true);
+            session.playerDeath(player, killer, EliminationCause.VOID);
             return;
         }
 

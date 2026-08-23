@@ -16,6 +16,7 @@ import org.example.pillars.managers.HudManager;
 import org.example.pillars.managers.ItemManager;
 import org.example.pillars.managers.TranslationManager;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public class AdminHubMenu implements InventoryHolder {
@@ -41,64 +42,57 @@ public class AdminHubMenu implements InventoryHolder {
     }
 
     private void buildMenu() {
-        for (int i = 0; i < MENU_SIZE; i++) {
-            inventory.setItem(i, filler());
-        }
+        ArenaMenuItemFactory.fill(inventory, Material.BLACK_STAINED_GLASS_PANE);
 
         inventory.setItem(4, actionItem(
                 Material.MAP,
                 translations.text("menus.admin-hub.arena-settings"),
-                List.of(translations.text("menus.admin-hub.arena-settings-lore")),
+                translations.list("menus.admin-hub.arena-settings-lore"),
                 "arenas"
         ));
         inventory.setItem(10, actionItem(
                 Material.COMPARATOR,
                 translations.text("menus.admin-hub.rarity-chances"),
-                List.of(translations.text("menus.admin-hub.rarity-chances-lore")),
+                translations.list("menus.admin-hub.rarity-chances-lore"),
                 "rarity"
         ));
         inventory.setItem(12, actionItem(
                 Material.CHEST,
                 translations.text("menus.admin-hub.common-items"),
-                List.of(translations.text("menus.admin-hub.common-items-lore")),
+                translations.list("menus.admin-hub.common-items-lore"),
                 "pool:common"
         ));
         inventory.setItem(14, actionItem(
                 Material.ENDER_CHEST,
                 translations.text("menus.admin-hub.rare-items"),
-                List.of(translations.text("menus.admin-hub.rare-items-lore")),
+                translations.list("menus.admin-hub.rare-items-lore"),
                 "pool:rare"
         ));
         inventory.setItem(16, actionItem(
                 Material.NETHERITE_BLOCK,
                 translations.text("menus.admin-hub.legendary-items"),
-                List.of(translations.text("menus.admin-hub.legendary-items-lore")),
+                translations.list("menus.admin-hub.legendary-items-lore"),
                 "pool:legendary"
         ));
         boolean eventsEnabled = gameSessionManager.areRandomEventsEnabled();
         inventory.setItem(22, actionItem(
                 eventsEnabled ? Material.LIME_DYE : Material.GRAY_DYE,
                 translations.text("menus.admin-hub.random-events"),
-                List.of(
-                        translations.text(
-                                eventsEnabled
-                                        ? "menus.admin-hub.random-events-enabled"
-                                        : "menus.admin-hub.random-events-disabled"
-                        ),
-                        translations.text("menus.admin-hub.random-events-lore")
-                ),
+                randomEventsLore(eventsEnabled),
                 "toggle-events"
         ));
     }
 
-    private ItemStack filler() {
-        ItemStack item = new ItemStack(Material.GRAY_STAINED_GLASS_PANE);
-        ItemMeta meta = item.getItemMeta();
-        if (meta != null) {
-            meta.setDisplayName(" ");
-            item.setItemMeta(meta);
-        }
-        return item;
+    private List<String> randomEventsLore(boolean enabled) {
+        List<String> lore = new ArrayList<>();
+        lore.add(translations.text(
+                enabled
+                        ? "menus.admin-hub.random-events-enabled"
+                        : "menus.admin-hub.random-events-disabled"
+        ));
+        lore.add("");
+        lore.addAll(translations.list("menus.admin-hub.random-events-lore"));
+        return lore;
     }
 
     private ItemStack actionItem(Material material, String name, List<String> lore, String action) {
