@@ -5,8 +5,10 @@ import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.scoreboard.*;
 import org.example.pillars.entities.Arena;
+import org.example.pillars.enums.ArenaGameMode;
 import org.example.pillars.enums.GameState;
 import org.example.pillars.enums.EliminationCause;
+import org.example.pillars.enums.ItemDeliveryMode;
 import org.example.pillars.gameevents.GameEventStatus;
 import org.example.pillars.gameevents.NextGameEventStatus;
 import org.example.pillars.ui.UiPalette;
@@ -429,6 +431,8 @@ public class HudManager {
     public void sendItemCooldown(
             Player player,
             int secondsLeft,
+            ArenaGameMode gameMode,
+            ItemDeliveryMode deliveryMode,
             long secondsUntilNextZoneDecrease,
             GameEventStatus gameEventStatus
     ) {
@@ -451,9 +455,18 @@ public class HudManager {
             );
         }
 
+        String deliveryTimer = translations.text(
+                gameMode == ArenaGameMode.LUCKY_BLOCKS
+                        ? "action-bar.next-lucky-block"
+                        : deliveryMode == ItemDeliveryMode.HOTBAR
+                                ? "action-bar.hotbar-refresh"
+                                : "action-bar.next-item",
+                "seconds", secondsLeft
+        );
+
         player.sendActionBar(translations.text(
                 "action-bar.match-status",
-                "item_seconds", secondsLeft,
+                "delivery", deliveryTimer,
                 "zone", zoneTimer,
                 "event", eventStatus
         ));
@@ -774,9 +787,20 @@ public class HudManager {
         player.sendMessage(translations.text(
                 "messages.arena-settings-updated",
                 "arena", arena.getDisplayName(),
-                "minimum", arena.getMinPlayers(),
-                "players", translations.plural("units.player-at", arena.getMinPlayers()),
-                "cooldown", arena.getItemCooldownSeconds()
+                  "minimum", arena.getMinPlayers(),
+                  "players", translations.plural("units.player-at", arena.getMinPlayers()),
+                  "cooldown", arena.getItemCooldownSeconds(),
+                  "border", arena.getBorderShrinkSeconds()
+          ));
+    }
+
+    public void sendArenaGameModeUpdated(Player player, Arena arena) {
+        player.sendMessage(translations.text(
+                "messages.arena-game-mode-updated",
+                "arena", arena.getDisplayName(),
+                "mode", translations.text(
+                        "menus.arena-settings.game-modes." + arena.getGameMode().configValue()
+                )
         ));
     }
 

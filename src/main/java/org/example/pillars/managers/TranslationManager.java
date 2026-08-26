@@ -19,7 +19,7 @@ public final class TranslationManager {
     private static final String DEFAULT_LANGUAGE = "en";
     private static final Set<String> SUPPORTED_LANGUAGES = Set.of("en", "ru");
     private static final Set<String> PLAYER_FACING_SECTIONS = Set.of(
-            "plugin", "lobby-items", "admin-item", "game-items",
+            "plugin", "lobby-items", "admin-item", "arena-admin-item", "game-items",
             "scoreboard", "titles", "action-bar", "messages", "rarities", "units",
             "arena-view", "menus"
     );

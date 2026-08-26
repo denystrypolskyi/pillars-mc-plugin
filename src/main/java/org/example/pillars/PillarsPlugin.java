@@ -7,6 +7,7 @@ import org.example.pillars.command.PillarsCommand;
 import org.example.pillars.listeners.GameSessionPlayerListener;
 import org.example.pillars.listeners.GuiListener;
 import org.example.pillars.listeners.LobbyListener;
+import org.example.pillars.listeners.LuckyBlockListener;
 import org.example.pillars.managers.*;
 
 public final class PillarsPlugin extends JavaPlugin {
@@ -44,6 +45,10 @@ public final class PillarsPlugin extends JavaPlugin {
         );
 
         getServer().getPluginManager().registerEvents(new GuiListener(), this);
+        getServer().getPluginManager().registerEvents(
+                new LuckyBlockListener(this, gameSessionManager, itemManager),
+                this
+        );
         getServer().getPluginManager().registerEvents(
                 new LobbyListener(this, arenaManager, gameSessionManager, hudManager, itemManager, playerManager),
                 this

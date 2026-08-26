@@ -61,30 +61,37 @@ public class SpawnManager {
         return bestSpawn;
     }
 
-    public void prepareSpawn(Location spawn, int height) {
+    public List<Location> prepareSpawn(Location spawn, int height, Material material) {
         World world = spawn == null ? null : spawn.getWorld();
-        if (world == null) return;
+        if (world == null) return List.of();
 
         int topY = spawn.getBlockY();
         int bottomY = getPillarBottomY(world, topY, height);
+        List<Location> blocks = new ArrayList<>();
         for (int y = topY; y >= bottomY; y--) {
             world.getBlockAt(spawn.getBlockX(), y, spawn.getBlockZ())
-                    .setType(Material.BEDROCK, false);
+                    .setType(material, false);
+            blocks.add(new Location(world, spawn.getBlockX(), y, spawn.getBlockZ()));
         }
+        return blocks;
     }
 
-    public void cleanupSpawn(Location spawn, int height) {
+    public List<Location> cleanupSpawn(Location spawn, int height) {
         World world = spawn == null ? null : spawn.getWorld();
-        if (world == null) return;
+        if (world == null) return List.of();
 
         int topY = spawn.getBlockY();
         int bottomY = getPillarBottomY(world, topY, height);
+        List<Location> blocks = new ArrayList<>();
         for (int y = topY; y >= bottomY; y--) {
             org.bukkit.block.Block block = world.getBlockAt(spawn.getBlockX(), y, spawn.getBlockZ());
-            if (block.getType() == Material.BEDROCK) {
+            if (block.getType() == Material.BEDROCK
+                    || block.getType() == Material.YELLOW_GLAZED_TERRACOTTA) {
                 block.setType(Material.AIR, false);
             }
+            blocks.add(block.getLocation());
         }
+        return blocks;
     }
 
     private int getPillarBottomY(World world, int topY, int height) {

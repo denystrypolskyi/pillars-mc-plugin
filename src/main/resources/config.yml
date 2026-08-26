@@ -1,11 +1,10 @@
-language: en # en | ru
+language: ru # en | ru
 
 settings:
   beginCountdownSeconds: 5
   endGameLobbyCountdownSeconds: 5
   endGameSpectatorDelayTicks: 40
   arenaResetDelayTicks: 160
-  borderShrinkSeconds: 360
   borderMinSize: 1
   borderSpawnPaddingBlocks: 10
   spawnPillarHeightBlocks: 5
@@ -76,6 +75,9 @@ arenas:
     joiningOpen: true
     minPlayers: 2
     itemCooldownSeconds: 5
+    borderShrinkSeconds: 240
+    gameMode: STANDARD
+    itemDeliveryMode: SINGLE
     floor:
       enabled: true
       shape: square
@@ -96,6 +98,9 @@ arenas:
     joiningOpen: true
     minPlayers: 2
     itemCooldownSeconds: 5
+    borderShrinkSeconds: 240
+    gameMode: STANDARD
+    itemDeliveryMode: SINGLE
     floor:
       enabled: true
       shape: square
@@ -116,6 +121,9 @@ arenas:
     joiningOpen: true
     minPlayers: 2
     itemCooldownSeconds: 5
+    borderShrinkSeconds: 240
+    gameMode: STANDARD
+    itemDeliveryMode: SINGLE
     floor:
       enabled: true
       shape: square
@@ -141,6 +149,9 @@ arenas:
     joiningOpen: true
     minPlayers: 2
     itemCooldownSeconds: 3
+    borderShrinkSeconds: 360
+    gameMode: STANDARD
+    itemDeliveryMode: SINGLE
     floor:
       enabled: true
       shape: square
@@ -165,6 +176,9 @@ arenas:
     joiningOpen: true
     minPlayers: 2
     itemCooldownSeconds: 3
+    borderShrinkSeconds: 360
+    gameMode: STANDARD
+    itemDeliveryMode: SINGLE
     floor:
       enabled: true
       shape: square
@@ -189,6 +203,9 @@ arenas:
     joiningOpen: true
     minPlayers: 2
     itemCooldownSeconds: 3
+    borderShrinkSeconds: 360
+    gameMode: STANDARD
+    itemDeliveryMode: SINGLE
     floor:
       enabled: true
       shape: square
@@ -218,6 +235,9 @@ arenas:
     joiningOpen: true
     minPlayers: 2
     itemCooldownSeconds: 3
+    borderShrinkSeconds: 480
+    gameMode: STANDARD
+    itemDeliveryMode: SINGLE
     floor:
       enabled: true
       shape: square
@@ -246,6 +266,9 @@ arenas:
     joiningOpen: true
     minPlayers: 2
     itemCooldownSeconds: 3
+    borderShrinkSeconds: 480
+    gameMode: STANDARD
+    itemDeliveryMode: SINGLE
     floor:
       enabled: true
       shape: square
@@ -274,6 +297,9 @@ arenas:
     joiningOpen: true
     minPlayers: 2
     itemCooldownSeconds: 3
+    borderShrinkSeconds: 480
+    gameMode: STANDARD
+    itemDeliveryMode: SINGLE
     floor:
       enabled: true
       shape: square

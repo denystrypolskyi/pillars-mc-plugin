@@ -11,7 +11,9 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.example.pillars.entities.Arena;
+import org.example.pillars.enums.ArenaGameMode;
 import org.example.pillars.enums.ArenaResetResult;
+import org.example.pillars.enums.ItemDeliveryMode;
 import org.example.pillars.managers.ArenaManager;
 import org.example.pillars.managers.GameSessionManager;
 import org.example.pillars.managers.HudManager;
@@ -95,6 +97,21 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
                 translations.text("menus.arena-settings.starts-at-lore")
         ), "min:1"));
 
+        inventory.setItem(12, actionItem(
+                arena.getItemDeliveryMode() == ItemDeliveryMode.HOTBAR ? Material.CHEST : Material.DROPPER,
+                translations.text("menus.arena-settings.item-delivery-mode"),
+                translations.list(
+                        "menus.arena-settings.item-delivery-mode-lore",
+                        "mode", translations.text(
+                                "menus.arena-settings.item-delivery-modes."
+                                        + arena.getItemDeliveryMode().configValue()
+                        ),
+                        "seconds", arena.getItemCooldownSeconds(),
+                        "break_time", formatHalfSeconds(arena.getItemCooldownSeconds())
+                ),
+                "item_mode"
+        ));
+
         inventory.setItem(13, actionItem(
                 arena.isFloorEnabled() ? floorIcon(arena.getFloorMaterial()) : Material.LIGHT_GRAY_CONCRETE,
                 translations.text("menus.arena-settings.floor"),
@@ -107,6 +124,21 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
                         "shape", translations.text("menus.arena-floor.shapes." + arena.getFloorShape().configValue())
                 ),
                 "floor"
+        ));
+
+        inventory.setItem(14, actionItem(
+                arena.getGameMode() == ArenaGameMode.LUCKY_BLOCKS
+                        ? Material.YELLOW_GLAZED_TERRACOTTA
+                        : Material.BEDROCK,
+                translations.text("menus.arena-settings.game-mode"),
+                translations.list(
+                        "menus.arena-settings.game-mode-lore",
+                        "mode", translations.text(
+                                "menus.arena-settings.game-modes." + arena.getGameMode().configValue()
+                        ),
+                        "seconds", arena.getItemCooldownSeconds()
+                ),
+                "game_mode"
         ));
 
         inventory.setItem(15, actionItem(
@@ -125,6 +157,25 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
                 translations.text("menus.arena-settings.cooldown-increase"),
                 List.of(translations.text("menus.arena-settings.cooldown-increase-lore")),
                 "cooldown:1"
+        ));
+
+        inventory.setItem(18, actionItem(
+                Material.RED_DYE,
+                translations.text("menus.arena-settings.border-shrink-decrease"),
+                translations.list("menus.arena-settings.border-shrink-change-lore"),
+                "border:-30"
+        ));
+        inventory.setItem(19, displayItem(
+                Material.COMPASS,
+                translations.text("menus.arena-settings.border-shrink-time"),
+                arena.getBorderShrinkSeconds() + translations.text("units.second-short"),
+                translations.text("menus.arena-settings.border-shrink-apply-lore")
+        ));
+        inventory.setItem(20, actionItem(
+                Material.LIME_DYE,
+                translations.text("menus.arena-settings.border-shrink-increase"),
+                translations.list("menus.arena-settings.border-shrink-change-lore"),
+                "border:30"
         ));
 
         inventory.setItem(22, actionItem(
@@ -173,6 +224,12 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
         if (material == Material.LAVA) return Material.LAVA_BUCKET;
         if (material == Material.WATER) return Material.WATER_BUCKET;
         return material;
+    }
+
+    private String formatHalfSeconds(int seconds) {
+        return seconds % 2 == 0
+                ? Integer.toString(seconds / 2)
+                : (seconds / 2) + ".5";
     }
 
     private ItemStack displayItem(Material material, String name, String value, String... lore) {
@@ -243,6 +300,19 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
             return;
         }
 
+        if (action.equals("item_mode")) {
+            arenaManager.updateArenaItemDeliveryMode(arena, arena.getItemDeliveryMode().next());
+            buildMenu();
+            return;
+        }
+
+        if (action.equals("game_mode")) {
+            arenaManager.updateArenaGameMode(arena, arena.getGameMode().next());
+            hudManager.sendArenaGameModeUpdated(clicker, arena);
+            buildMenu();
+            return;
+        }
+
         if (action.equals("reset_arena")) {
             resetConfirmationPending = true;
             buildMenu();
@@ -282,6 +352,15 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
             minPlayers += delta;
         } else if (parts[0].equals("cooldown")) {
             cooldown += delta;
+        } else if (parts[0].equals("border")) {
+            int adjustedDelta = event.isShiftClick() ? delta * 2 : delta;
+            arenaManager.updateArenaBorderShrinkSeconds(
+                    arena,
+                    arena.getBorderShrinkSeconds() + adjustedDelta
+            );
+            hudManager.sendArenaSettingsUpdated(clicker, arena);
+            buildMenu();
+            return;
         }
 
         arenaManager.updateSafeArenaSettings(arena, minPlayers, cooldown);

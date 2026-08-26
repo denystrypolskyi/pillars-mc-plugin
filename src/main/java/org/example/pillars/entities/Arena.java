@@ -3,6 +3,8 @@ package org.example.pillars.entities;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.example.pillars.enums.FloorShape;
+import org.example.pillars.enums.ArenaGameMode;
+import org.example.pillars.enums.ItemDeliveryMode;
 
 import java.util.List;
 
@@ -11,6 +13,7 @@ public class Arena {
     private String worldName;
     private String displayName;
     private int itemCooldownSeconds;
+    private int borderShrinkSeconds;
     private int minPlayers;
     private boolean joiningOpen = true;
     private List<Location> spawnPoints;
@@ -19,6 +22,8 @@ public class Arena {
     private int floorRadius = 8;
     private int floorY = 75;
     private FloorShape floorShape = FloorShape.SQUARE;
+    private ItemDeliveryMode itemDeliveryMode = ItemDeliveryMode.SINGLE;
+    private ArenaGameMode gameMode = ArenaGameMode.STANDARD;
 
     public String getWorldName() {
         return worldName;
@@ -34,6 +39,10 @@ public class Arena {
 
     public int getItemCooldownSeconds() {
         return itemCooldownSeconds;
+    }
+
+    public int getBorderShrinkSeconds() {
+        return borderShrinkSeconds;
     }
 
     public int getMinPlayers() {
@@ -68,6 +77,14 @@ public class Arena {
         return floorShape;
     }
 
+    public ItemDeliveryMode getItemDeliveryMode() {
+        return itemDeliveryMode;
+    }
+
+    public ArenaGameMode getGameMode() {
+        return gameMode;
+    }
+
     public void setWorldName(String worldName) {
         this.worldName = worldName;
     }
@@ -82,6 +99,10 @@ public class Arena {
 
     public void setItemCooldownSeconds(int seconds) {
         this.itemCooldownSeconds = seconds;
+    }
+
+    public void setBorderShrinkSeconds(int seconds) {
+        this.borderShrinkSeconds = seconds;
     }
 
     public void setMinPlayers(int minPlayers) {
@@ -114,6 +135,14 @@ public class Arena {
 
     public void setFloorShape(FloorShape floorShape) {
         this.floorShape = floorShape;
+    }
+
+    public void setItemDeliveryMode(ItemDeliveryMode itemDeliveryMode) {
+        this.itemDeliveryMode = itemDeliveryMode;
+    }
+
+    public void setGameMode(ArenaGameMode gameMode) {
+        this.gameMode = gameMode;
     }
 
     public Location getCenter() {

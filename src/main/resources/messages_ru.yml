@@ -23,11 +23,20 @@ admin-item:
   name: "&e&lменю администратора"
   lore: "&7нажмите пкм, чтобы открыть /p admin."
 
+arena-admin-item:
+  name: "&e&lнастройки текущей арены"
+  arena: "&7арена: &f{arena}"
+  lore: "&7нажмите пкм, чтобы открыть настройки."
+
 game-items:
   force-start: "&a&lзапустить игру"
   force-start-lore: "&7нажмите пкм, чтобы начать игру."
   leave-arena: "&c&lпокинуть арену"
   leave-arena-lore: "&7нажмите пкм, чтобы вернуться в лобби."
+  lucky-block: "&e&lлаки-блок"
+  lucky-block-lore:
+    - "&7поставьте и сломайте его,"
+    - "&7чтобы получить случайный предмет."
 
 logs:
   command-not-defined: "Команда 'pillars' не определена в plugin.yml. Плагин будет отключён."
@@ -98,7 +107,10 @@ titles:
     title: "&c&lнет победителя"
     subtitle: "&7все игроки выбыли"
 action-bar:
-  match-status: "&7предмет: &e{item_seconds}с &8| {zone} &8| &7событие: &e{event}"
+  match-status: "{delivery} &8| {zone} &8| &7событие: &e{event}"
+  next-item: "&7предмет: &e{seconds}с"
+  hotbar-refresh: "&7обновление хотбара: &e{seconds}с"
+  next-lucky-block: "&7лаки-блок: &e{seconds}с"
   timed-game-event-value: "{event} &e{seconds}с"
   indefinite-game-event-value: "{event} &cдо конца матча"
   zone-decrease: "&cзона -1 блок через &e{seconds}с"
@@ -109,7 +121,7 @@ action-bar:
 
 game-events:
   none: "нет"
-  super_smash_bros: "super smash bros"
+  super_smash_bros: "суперсхватка"
   cosmic_drift: "космический дрейф"
   meteor_shower: "метеоритный дождь"
   earthquake: "землетрясение"
@@ -129,8 +141,8 @@ messages:
   player-left: "&8› &f{player} &7покинул арену &e{arena}"
   force-started: "&8› &7арена &e{arena} &7запущена принудительно игроком &f{player}"
   game-started: "&8› &7игра на арене &e{arena} &aначалась&7. удачи!"
-  super-smash-bros-start: "&8› &e&lsuper smash bros! &7отбрасывание усилено до &eх{multiplier} &7на &e{seconds} сек."
-  super-smash-bros-end: "&8› &7super smash bros завершён. отбрасывание снова обычное."
+  super-smash-bros-start: "&8› &e&lсуперсхватка! &7отбрасывание усилено до &eх{multiplier} &7на &e{seconds} сек."
+  super-smash-bros-end: "&8› &7суперсхватка завершена. отбрасывание снова обычное."
   cosmic-drift-start: "&8› &b&lкосмический дрейф! &7арена потеряла гравитацию на &e{seconds} сек."
   cosmic-drift-end: "&8› &7космический дрейф завершён. гравитация снова обычная."
   meteor-shower-start: "&8› &6&lметеоритный дождь! &7следите за кругами падения в течение &e{seconds} сек."
@@ -249,7 +261,7 @@ messages:
     - "&7запуск: &e/p event &f<событие>"
   game-event-list:
     - "&fдоступные события"
-    - "&esuper smash bros &8| &bкосмический дрейф"
+    - "&eсуперсхватка &8| &bкосмический дрейф"
     - "&6метеоритный дождь &8| &eземлетрясение"
     - "&cохота &8| &cгорячая картошка &8| &cпоследний вздох"
     - "&7ближайшее событие: &e/p event next"
@@ -296,7 +308,8 @@ messages:
   internal-weight: "&7внутренний вес: &f{weight}"
   item-removed: "&8› &7предмет &f{material} &cотключён &7в категории &e{rarity}&7."
   rarity-updated: "&8› &7шансы сохранены: &f{common_name} {common}% &8| &b{rare_name} {rare}% &8| &6{legendary_name} {legendary}%"
-  arena-settings-updated: "&8› &7арена &e{arena}&7: запуск при &f{minimum} {players}&8, &7предмет каждые &f{cooldown}с&7."
+  arena-settings-updated: "&8› &7арена &e{arena}&7: запуск при &f{minimum} {players}&8, &7предмет каждые &f{cooldown}с&8, &7сужение зоны за &f{border}с&7."
+  arena-game-mode-updated: "&8› &7арена &e{arena}&7: режим изменён на &f{mode}&7. Применится в следующем матче."
   arena-joining-opened: "&8› &e{arena} &aоткрыта для входа игроком &f{player}&7."
   arena-joining-closed: "&8› &e{arena} &cзакрыта для входа игроком &f{player}&7."
   spectate-unavailable: "&cнаблюдать за ареной можно только во время игры."
@@ -444,6 +457,28 @@ menus:
     cooldown-minimum: "&7минимальный интервал выдачи - 1 секунда."
     item-cooldown: "&eинтервал предметов"
     cooldown-increase-lore: "&7увеличивает паузу между выдачей предметов."
+    border-shrink-decrease: "&cсужение зоны -30с"
+    border-shrink-increase: "&aсужение зоны +30с"
+    border-shrink-time: "&eвремя сужения зоны"
+    border-shrink-change-lore:
+      - "&7обычный клик: &f30 секунд"
+      - "&7Shift + клик: &f60 секунд"
+      - "&7допустимо: &f60–1200 секунд"
+    border-shrink-apply-lore: "&7применится при запуске следующего матча."
+    item-delivery-mode: "&eрежим выдачи предметов"
+    item-delivery-mode-lore:
+      - "&7сейчас: &f{mode}"
+      - "&7интервал: &f{seconds} сек."
+      - ""
+      - "&7одиночный режим добавляет один предмет."
+      - "&7полный хотбар заменяет старые выданные"
+      - "&7предметы и заполняет слоты 1–9."
+      - "&8в режиме лаки-блоков эта настройка не действует."
+      - ""
+      - "&eнажмите, чтобы переключить!"
+    item-delivery-modes:
+      single: "один предмет"
+      hotbar: "полный хотбар"
     floor: "&eнижняя платформа"
     floor-lore:
       - "&7состояние: {status}"
@@ -451,6 +486,20 @@ menus:
       - "&7форма: &f{shape}"
       - ""
       - "&eнажмите, чтобы настроить!"
+    game-mode: "&eрежим арены"
+    game-mode-lore:
+      - "&7сейчас: &f{mode}"
+      - ""
+      - "&7в режиме лаки-блоков столбы можно ломать,"
+      - "&7а вместо предметов выдаются лаки-блоки."
+      - "&7за разрушение даётся случайный предмет."
+      - "&7выдача лаки-блоков: &fкаждые {seconds}с"
+      - "&7время разрушения: &f{break_time}с"
+      - ""
+      - "&eнажмите, чтобы переключить!"
+    game-modes:
+      standard: "обычный"
+      lucky_blocks: "лаки-блоки"
     spectate: "&eнаблюдать за матчем"
     spectate-lore:
       - "&7доступно только пока матч идёт."

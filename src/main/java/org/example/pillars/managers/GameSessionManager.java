@@ -1,6 +1,7 @@
 package org.example.pillars.managers;
 
 import org.bukkit.entity.Player;
+import org.bukkit.World;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.example.pillars.entities.Arena;
 import org.example.pillars.GameSession;
@@ -130,6 +131,10 @@ public class GameSessionManager {
 
     public GameSession getSession(Arena arena) {
         return sessions.get(arena.getWorldName());
+    }
+
+    public GameSession getSession(World world) {
+        return world == null ? null : sessions.get(world.getName());
     }
 
     public Arena findQuickJoinArena() {

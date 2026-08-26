@@ -23,11 +23,20 @@ admin-item:
   name: "&e&ladmin menu"
   lore: "&7right-click to open /p admin."
 
+arena-admin-item:
+  name: "&e&lcurrent arena settings"
+  arena: "&7arena: &f{arena}"
+  lore: "&7right-click to open the settings."
+
 game-items:
   force-start: "&a&lforce start"
   force-start-lore: "&7right-click to start the game."
   leave-arena: "&c&lleave arena"
   leave-arena-lore: "&7right-click to return to the lobby."
+  lucky-block: "&e&llucky block"
+  lucky-block-lore:
+    - "&7place and break it"
+    - "&7to receive a random item."
 
 logs:
   command-not-defined: "Command 'pillars' is not defined in plugin.yml. Disabling plugin."
@@ -98,7 +107,10 @@ titles:
     title: "&c&lno winner"
     subtitle: "&7all players have been eliminated"
 action-bar:
-  match-status: "&7item: &e{item_seconds}s &8| {zone} &8| &7event: &e{event}"
+  match-status: "{delivery} &8| {zone} &8| &7event: &e{event}"
+  next-item: "&7item: &e{seconds}s"
+  hotbar-refresh: "&7hotbar refresh: &e{seconds}s"
+  next-lucky-block: "&7lucky block: &e{seconds}s"
   timed-game-event-value: "{event} &e{seconds}s"
   indefinite-game-event-value: "{event} &cuntil match end"
   zone-decrease: "&czone -1 block in &e{seconds}s"
@@ -296,7 +308,8 @@ messages:
   internal-weight: "&7internal weight: &f{weight}"
   item-removed: "&8› &7item &f{material} &cwas disabled &7in &e{rarity}&7."
   rarity-updated: "&8› &7chances saved: &f{common_name} {common}% &8| &b{rare_name} {rare}% &8| &6{legendary_name} {legendary}%"
-  arena-settings-updated: "&8› &7arena &e{arena}&7: starts at &f{minimum} {players}&8, &7item every &f{cooldown}s&7."
+  arena-settings-updated: "&8› &7arena &e{arena}&7: starts at &f{minimum} {players}&8, &7item every &f{cooldown}s&8, &7border shrinks in &f{border}s&7."
+  arena-game-mode-updated: "&8› &7arena &e{arena}&7: mode changed to &f{mode}&7. It takes effect next match."
   arena-joining-opened: "&8› &e{arena} &awas opened for joining &7by &f{player}&7."
   arena-joining-closed: "&8› &e{arena} &cwas closed for joining &7by &f{player}&7."
   spectate-unavailable: "&cyou can only spectate arenas while a game is in progress."
@@ -444,6 +457,28 @@ menus:
     cooldown-minimum: "&7shortest allowed item cooldown is 1 second."
     item-cooldown: "&eitem cooldown"
     cooldown-increase-lore: "&7increase the time between item deliveries."
+    border-shrink-decrease: "&cborder shrink -30s"
+    border-shrink-increase: "&aborder shrink +30s"
+    border-shrink-time: "&eborder shrink time"
+    border-shrink-change-lore:
+      - "&7regular click: &f30 seconds"
+      - "&7Shift + click: &f60 seconds"
+      - "&7allowed range: &f60–1200 seconds"
+    border-shrink-apply-lore: "&7takes effect when the next match starts."
+    item-delivery-mode: "&eitem delivery mode"
+    item-delivery-mode-lore:
+      - "&7current: &f{mode}"
+      - "&7interval: &f{seconds}s"
+      - ""
+      - "&7single mode adds one item."
+      - "&7full hotbar replaces old delivered items"
+      - "&7and fills slots 1–9."
+      - "&8this setting is ignored in lucky blocks mode."
+      - ""
+      - "&eclick to switch!"
+    item-delivery-modes:
+      single: "single item"
+      hotbar: "full hotbar"
     floor: "&elower platform"
     floor-lore:
       - "&7status: {status}"
@@ -451,6 +486,20 @@ menus:
       - "&7shape: &f{shape}"
       - ""
       - "&eclick to configure!"
+    game-mode: "&earena mode"
+    game-mode-lore:
+      - "&7current: &f{mode}"
+      - ""
+      - "&7in lucky blocks mode, pillars can be broken"
+      - "&7and lucky blocks are delivered instead of items."
+      - "&7breaking one grants a random item."
+      - "&7lucky block delivery: &fevery {seconds}s"
+      - "&7break time: &f{break_time}s"
+      - ""
+      - "&eclick to switch!"
+    game-modes:
+      standard: "standard"
+      lucky_blocks: "lucky blocks"
     spectate: "&espectate match"
     spectate-lore:
       - "&7available only while a match is running."

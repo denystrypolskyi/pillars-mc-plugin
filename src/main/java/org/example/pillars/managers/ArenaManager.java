@@ -6,7 +6,9 @@ import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.example.pillars.PillarsPlugin;
 import org.example.pillars.entities.Arena;
+import org.example.pillars.enums.ArenaGameMode;
 import org.example.pillars.enums.FloorShape;
+import org.example.pillars.enums.ItemDeliveryMode;
 
 import java.io.File;
 import java.io.IOException;
@@ -17,6 +19,8 @@ import java.util.regex.Pattern;
 
 public class ArenaManager {
     public static final int MIN_PLAYERS_TO_START = 2;
+    public static final int MIN_BORDER_SHRINK_SECONDS = 60;
+    public static final int MAX_BORDER_SHRINK_SECONDS = 1200;
     public static final int MIN_FLOOR_DISTANCE_BELOW_SPAWNS = 12;
     public static final int MAX_FLOOR_DISTANCE_BELOW_SPAWNS = 70;
     public static final int FLOOR_ELIMINATION_MARGIN = 8;
@@ -32,7 +36,16 @@ public class ArenaManager {
     public ArenaManager(PillarsPlugin plugin, TranslationManager translations) {
         this.plugin = plugin;
         this.translations = translations;
+        removeLegacyGlobalBorderShrinkSetting();
         loadArenas();
+    }
+
+    private void removeLegacyGlobalBorderShrinkSetting() {
+        String legacyPath = "settings.borderShrinkSeconds";
+        if (!plugin.getConfig().contains(legacyPath)) return;
+
+        plugin.getConfig().set(legacyPath, null);
+        plugin.saveConfig();
     }
 
     public Arena getArena(String worldName) {
@@ -126,6 +139,8 @@ public class ArenaManager {
             arena.setDisplayName(getLocalizedDisplayName(sec, worldName));
             arena.setJoiningOpen(sec.getBoolean("joiningOpen", true));
             arena.setItemCooldownSeconds(sec.getInt("itemCooldownSeconds", 0));
+            arena.setItemDeliveryMode(ItemDeliveryMode.fromConfig(sec.getString("itemDeliveryMode", "single")));
+            arena.setGameMode(ArenaGameMode.fromConfig(sec.getString("gameMode", "standard")));
 
             List<Location> spawns = new ArrayList<>();
             for (Object obj : sec.getList("spawnPoints", Collections.emptyList())) {
@@ -151,6 +166,16 @@ public class ArenaManager {
             }
 
             arena.setSpawnPoints(spawns);
+            int defaultBorderShrinkSeconds = switch (spawns.size()) {
+                case 4 -> 240;
+                case 8 -> 360;
+                default -> 480;
+            };
+            arena.setBorderShrinkSeconds(Math.max(
+                    MIN_BORDER_SHRINK_SECONDS,
+                    Math.min(MAX_BORDER_SHRINK_SECONDS,
+                            sec.getInt("borderShrinkSeconds", defaultBorderShrinkSeconds))
+            ));
             loadFloorSettings(arena, sec);
             int defaultMinPlayers = Math.max(MIN_PLAYERS_TO_START, (int) Math.ceil(spawns.size() / 2.0));
             arena.setMinPlayers(Math.max(
@@ -327,6 +352,62 @@ public class ArenaManager {
         }
 
         plugin.getConfig().set("arenas." + configKey + ".joiningOpen", joiningOpen);
+        plugin.saveConfig();
+    }
+
+    public void updateArenaItemDeliveryMode(Arena arena, ItemDeliveryMode mode) {
+        if (arena == null || mode == null) return;
+        arena.setItemDeliveryMode(mode);
+
+        String configKey = getConfigKey(arena);
+        if (configKey == null) {
+            plugin.getLogger().warning(translations.text(
+                    "logs.arena-settings-key-missing",
+                    "world", arena.getWorldName()
+            ));
+            return;
+        }
+
+        plugin.getConfig().set("arenas." + configKey + ".itemDeliveryMode", mode.name());
+        plugin.saveConfig();
+    }
+
+    public void updateArenaGameMode(Arena arena, ArenaGameMode mode) {
+        if (arena == null || mode == null) return;
+        arena.setGameMode(mode);
+
+        String configKey = getConfigKey(arena);
+        if (configKey == null) {
+            plugin.getLogger().warning(translations.text(
+                    "logs.arena-settings-key-missing",
+                    "world", arena.getWorldName()
+            ));
+            return;
+        }
+
+        plugin.getConfig().set("arenas." + configKey + ".gameMode", mode.name());
+        plugin.saveConfig();
+    }
+
+    public void updateArenaBorderShrinkSeconds(Arena arena, int seconds) {
+        if (arena == null) return;
+
+        int clampedSeconds = Math.max(
+                MIN_BORDER_SHRINK_SECONDS,
+                Math.min(MAX_BORDER_SHRINK_SECONDS, seconds)
+        );
+        arena.setBorderShrinkSeconds(clampedSeconds);
+
+        String configKey = getConfigKey(arena);
+        if (configKey == null) {
+            plugin.getLogger().warning(translations.text(
+                    "logs.arena-settings-key-missing",
+                    "world", arena.getWorldName()
+            ));
+            return;
+        }
+
+        plugin.getConfig().set("arenas." + configKey + ".borderShrinkSeconds", clampedSeconds);
         plugin.saveConfig();
     }
 

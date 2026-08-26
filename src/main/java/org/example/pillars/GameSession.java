@@ -7,8 +7,10 @@ import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Vector;
 import org.example.pillars.entities.Arena;
 import org.example.pillars.enums.ArenaResetResult;
+import org.example.pillars.enums.ArenaGameMode;
 import org.example.pillars.enums.GameState;
 import org.example.pillars.enums.EliminationCause;
+import org.example.pillars.enums.ItemDeliveryMode;
 import org.example.pillars.gameevents.GameEventManager;
 import org.example.pillars.gameevents.GameEventStatus;
 import org.example.pillars.gameevents.NextGameEventStatus;
@@ -27,6 +29,7 @@ public class GameSession {
     private final Map<UUID, Location> frozenPlayers = new HashMap<>();
     private final Map<UUID, DamageCredit> lastDamagerMap = new HashMap<>();
     private final Map<UUID, Location> occupiedSpawns = new HashMap<>();
+    private final Set<Location> luckyBlocks = new HashSet<>();
     private final Map<UUID, Location> adminSpectatorPreviousLocations = new HashMap<>();
     private final Map<UUID, GameMode> adminSpectatorPreviousGameModes = new HashMap<>();
 
@@ -55,6 +58,8 @@ public class GameSession {
 
     private boolean resetInProgress = false;
     private boolean forceStart = false;
+    private ArenaGameMode activeGameMode;
+    private int activeItemIntervalSeconds;
     private long borderShrinkEndTimeMillis = -1L;
     private double borderShrinkBlocksPerSecond = 0.0;
 
@@ -62,7 +67,6 @@ public class GameSession {
     private final int endGameLobbyCountdownSeconds;
     private final long endGameSpectatorDelayTicks;
     private final long arenaResetDelayTicks;
-    private final long borderShrinkSeconds;
     private final double borderMinSize;
     private final double borderSpawnPaddingBlocks;
     private final int spawnPillarHeightBlocks;
@@ -96,7 +100,6 @@ public class GameSession {
         this.endGameLobbyCountdownSeconds = Math.max(1, plugin.getConfig().getInt("settings.endGameLobbyCountdownSeconds", 5));
         this.endGameSpectatorDelayTicks = Math.max(0L, plugin.getConfig().getLong("settings.endGameSpectatorDelayTicks", 40L));
         this.arenaResetDelayTicks = Math.max(1L, plugin.getConfig().getLong("settings.arenaResetDelayTicks", 160L));
-        this.borderShrinkSeconds = Math.max(1L, plugin.getConfig().getLong("settings.borderShrinkSeconds", 360L));
         this.borderMinSize = Math.max(1.0, plugin.getConfig().getDouble("settings.borderMinSize", 1.0));
         this.borderSpawnPaddingBlocks = Math.max(1.0, plugin.getConfig().getDouble("settings.borderSpawnPaddingBlocks", 10.0));
         this.spawnPillarHeightBlocks = Math.max(1, Math.min(
@@ -130,6 +133,7 @@ public class GameSession {
             playerManager.giveLeaveArenaItem(player);
             playerManager.giveForceStartItem(player);
             playerManager.giveAdminMenuItem(player);
+            playerManager.giveCurrentArenaSettingsItem(player, arena.getDisplayName());
         }
         hudManager.broadcastPlayerJoinedArena(player, arena.getDisplayName(), activePlayers.size(), arena.getSpawnPoints().size());
 
@@ -175,7 +179,7 @@ public class GameSession {
 
         if (state == GameState.WAITING || state == GameState.STARTING) {
             Location spawn = occupiedSpawns.remove(uuid);
-            spawnManager.cleanupSpawn(spawn, spawnPillarHeightBlocks);
+            luckyBlocks.removeAll(spawnManager.cleanupSpawn(spawn, spawnPillarHeightBlocks));
 
             if (state == GameState.STARTING && activePlayers.size() < getMinPlayers()) {
                 cancelBeginGameCountdownTask();
@@ -418,7 +422,17 @@ public class GameSession {
             return false;
         }
 
-        spawnManager.prepareSpawn(spawn, spawnPillarHeightBlocks);
+        Material pillarMaterial = arena.getGameMode() == ArenaGameMode.LUCKY_BLOCKS
+                ? Material.YELLOW_GLAZED_TERRACOTTA
+                : Material.BEDROCK;
+        List<Location> pillarBlocks = spawnManager.prepareSpawn(
+                spawn,
+                spawnPillarHeightBlocks,
+                pillarMaterial
+        );
+        if (arena.getGameMode() == ArenaGameMode.LUCKY_BLOCKS) {
+            luckyBlocks.addAll(pillarBlocks);
+        }
 
         occupiedSpawns.put(player.getUniqueId(), spawn);
 
@@ -512,6 +526,9 @@ public class GameSession {
         lastDamagerMap.clear();
         endGameCountdownTasks.clear();
         occupiedSpawns.clear();
+        luckyBlocks.clear();
+        activeGameMode = null;
+        activeItemIntervalSeconds = 0;
         forceStart = false;
     }
 
@@ -591,6 +608,30 @@ public class GameSession {
 
     public Arena getArena() {
         return arena;
+    }
+
+    public boolean isActivePlayer(Player player) {
+        return player != null && activePlayers.contains(player.getUniqueId());
+    }
+
+    public boolean isLuckyBlock(org.bukkit.block.Block block) {
+        return block != null && luckyBlocks.contains(block.getLocation());
+    }
+
+    public void registerLuckyBlock(org.bukkit.block.Block block) {
+        if (block != null) luckyBlocks.add(block.getLocation());
+    }
+
+    public boolean removeLuckyBlock(org.bukkit.block.Block block) {
+        return block != null && luckyBlocks.remove(block.getLocation());
+    }
+
+    public boolean isLuckyBlocksModeActive() {
+        return state == GameState.RUNNING && activeGameMode == ArenaGameMode.LUCKY_BLOCKS;
+    }
+
+    public int getActiveItemIntervalSeconds() {
+        return Math.max(1, activeItemIntervalSeconds);
     }
 
     public double getEliminationY() {
@@ -691,6 +732,9 @@ public class GameSession {
 
             counter[0]--;
             if (counter[0] < 0) {
+                activeGameMode = arena.getGameMode();
+                activeItemIntervalSeconds = Math.max(1, arena.getItemCooldownSeconds());
+                prepareOccupiedPillarsForGameMode();
                 state = GameState.RUNNING;
                 frozenPlayers.clear();
                 cancelBeginGameCountdownTask();
@@ -721,8 +765,9 @@ public class GameSession {
     private void startItemDistributionTask() {
         if (itemDistributionTask != null) return;
 
-        final int interval = getArena().getItemCooldownSeconds();
+        final int interval = getActiveItemIntervalSeconds();
         final int[] counter = {interval};
+        final ItemDeliveryMode[] previousMode = {arena.getItemDeliveryMode()};
 
         itemDistributionTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
             for (UUID uuid : activePlayers) {
@@ -730,10 +775,12 @@ public class GameSession {
                 if (player != null) {
                     double currentBorderSize = getCurrentBorderSize();
                     hudManager.sendItemCooldown(
-                            player,
-                            counter[0],
-                            getSecondsUntilNextBorderDecrease(currentBorderSize),
-                            getActiveGameEventStatus()
+                             player,
+                             counter[0],
+                             activeGameMode,
+                             arena.getItemDeliveryMode(),
+                             getSecondsUntilNextBorderDecrease(currentBorderSize),
+                             getActiveGameEventStatus()
                     );
                 }
             }
@@ -742,15 +789,40 @@ public class GameSession {
                 for (UUID uuid : activePlayers) {
                     Player player = Bukkit.getPlayer(uuid);
                     if (player != null) {
-                        itemManager.giveRandomItem(player);
+                        ItemDeliveryMode currentMode = arena.getItemDeliveryMode();
+                        if (activeGameMode == ArenaGameMode.LUCKY_BLOCKS) {
+                            itemManager.giveLuckyBlock(player);
+                        } else if (currentMode == ItemDeliveryMode.HOTBAR) {
+                            itemManager.refreshHotbar(player);
+                        } else {
+                            if (previousMode[0] == ItemDeliveryMode.HOTBAR) {
+                                itemManager.clearDeliveredItems(player);
+                            }
+                            itemManager.giveRandomItem(player);
+                        }
                         soundManager.playItemGivenSound(player);
                     }
                 }
+                previousMode[0] = arena.getItemDeliveryMode();
             }
 
             counter[0]--;
             if (counter[0] <= 0) counter[0] = interval;
         }, 0L, 20L);
+    }
+
+    private void prepareOccupiedPillarsForGameMode() {
+        luckyBlocks.clear();
+        Material material = activeGameMode == ArenaGameMode.LUCKY_BLOCKS
+                ? Material.YELLOW_GLAZED_TERRACOTTA
+                : Material.BEDROCK;
+
+        for (Location spawn : occupiedSpawns.values()) {
+            List<Location> blocks = spawnManager.prepareSpawn(spawn, spawnPillarHeightBlocks, material);
+            if (activeGameMode == ArenaGameMode.LUCKY_BLOCKS) {
+                luckyBlocks.addAll(blocks);
+            }
+        }
     }
 
     private void startWaitingForPlayersTask() {
@@ -778,6 +850,7 @@ public class GameSession {
                 playerManager.giveLeaveArenaItem(player);
                 playerManager.giveForceStartItem(player);
                 playerManager.giveAdminMenuItem(player);
+                playerManager.giveCurrentArenaSettingsItem(player, arena.getDisplayName());
             }
         }
     }
@@ -789,6 +862,7 @@ public class GameSession {
                 playerManager.removeLeaveArenaItem(player);
                 playerManager.removeForceStartItem(player);
                 playerManager.removeAdminMenuItem(player);
+                playerManager.removeCurrentArenaSettingsItem(player);
             }
         }
     }
@@ -864,6 +938,7 @@ public class GameSession {
         border.setWarningDistance(0);
         border.setWarningTime(0);
 
+        long borderShrinkSeconds = arena.getBorderShrinkSeconds();
         borderShrinkEndTimeMillis = System.currentTimeMillis() + (borderShrinkSeconds * 1000L);
         borderShrinkBlocksPerSecond = Math.max(0.0, (initialSize - borderMinSize) / borderShrinkSeconds);
         startCalmWorldBorderShrink(border);

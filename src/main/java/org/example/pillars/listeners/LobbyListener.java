@@ -20,6 +20,7 @@ import org.example.pillars.GameSession;
 import org.example.pillars.entities.Arena;
 import org.example.pillars.enums.GameState;
 import org.example.pillars.gui.AdminHubMenu;
+import org.example.pillars.gui.AdminArenaSettingsMenu;
 import org.example.pillars.gui.ArenaMenu;
 import org.example.pillars.managers.ArenaManager;
 import org.example.pillars.managers.GameSessionManager;
@@ -130,6 +131,30 @@ public class LobbyListener implements Listener {
             }
 
             new AdminHubMenu(player, itemManager, hudManager, arenaManager, gameSessionManager).open();
+            return;
+        }
+
+        if (action.equals("arena_settings")) {
+            if (!player.hasPermission("pillars.admin")) {
+                playerManager.removeCurrentArenaSettingsItem(player);
+                hudManager.sendNoPermission(player);
+                return;
+            }
+
+            GameSession session = gameSessionManager.getSessionByPlayer(player);
+            if (session == null) {
+                playerManager.removeCurrentArenaSettingsItem(player);
+                return;
+            }
+
+            new AdminArenaSettingsMenu(
+                    player,
+                    arenaManager,
+                    gameSessionManager,
+                    itemManager,
+                    hudManager,
+                    session.getArena()
+            ).open();
             return;
         }
 

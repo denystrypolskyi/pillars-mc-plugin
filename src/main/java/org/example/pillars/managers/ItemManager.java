@@ -1,10 +1,13 @@
 package org.example.pillars.managers;
 
 import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
@@ -21,6 +24,8 @@ public class ItemManager {
     private final JavaPlugin plugin;
     private final TranslationManager translations;
     private final File itemPoolsFile;
+    private final NamespacedKey hotbarItemKey;
+    private final NamespacedKey luckyBlockItemKey;
     private int legendaryPercent;
     private int rarePercent;
     private int antiRepeatHistorySize;
@@ -33,6 +38,8 @@ public class ItemManager {
         this.plugin = plugin;
         this.translations = translations;
         this.itemPoolsFile = new File(plugin.getDataFolder(), "item-pools.yml");
+        this.hotbarItemKey = new NamespacedKey(plugin, "hotbar_mode_item");
+        this.luckyBlockItemKey = new NamespacedKey(plugin, "lucky_block_item");
         saveDefaultItemPools();
         migrateLegacyConfigItemPools();
         reloadConfigValues();
@@ -79,13 +86,77 @@ public class ItemManager {
     }
 
     public void giveRandomItem(Player player) {
+        giveOrDrop(player, createRandomItem(player, true));
+    }
+
+    public void giveLuckyBlock(Player player) {
+        ItemStack item = new ItemStack(Material.YELLOW_GLAZED_TERRACOTTA);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.setDisplayName(translations.text("game-items.lucky-block"));
+            meta.setLore(translations.list("game-items.lucky-block-lore"));
+            meta.getPersistentDataContainer().set(luckyBlockItemKey, PersistentDataType.BYTE, (byte) 1);
+            item.setItemMeta(meta);
+        }
+        giveOrDrop(player, item);
+    }
+
+    public boolean isLuckyBlock(ItemStack item) {
+        if (item == null || !item.hasItemMeta()) return false;
+        Byte tagged = item.getItemMeta().getPersistentDataContainer()
+                .get(luckyBlockItemKey, PersistentDataType.BYTE);
+        return tagged != null && tagged == (byte) 1;
+    }
+
+    private void giveOrDrop(Player player, ItemStack item) {
+        Map<Integer, ItemStack> leftovers = player.getInventory().addItem(item);
+        for (ItemStack leftover : leftovers.values()) {
+            player.getWorld().dropItemNaturally(player.getLocation(), leftover);
+        }
+    }
+
+    public void refreshHotbar(Player player) {
+        clearDeliveredItems(player);
+
+        for (int slot = 0; slot < 9; slot++) {
+            ItemStack existing = player.getInventory().getItem(slot);
+            if (existing == null || existing.getType().isAir()) {
+                player.getInventory().setItem(slot, createRandomItem(player, true));
+            }
+        }
+    }
+
+    public void clearDeliveredItems(Player player) {
+        ItemStack[] storage = player.getInventory().getStorageContents();
+        for (int slot = 0; slot < storage.length; slot++) {
+            if (isHotbarModeItem(storage[slot])) {
+                player.getInventory().setItem(slot, null);
+            }
+        }
+    }
+
+    private ItemStack createRandomItem(Player player, boolean hotbarModeItem) {
         ItemStack item = getRandomItem();
         for (int attempt = 0; attempt < 8 && wasRecentlyGiven(player, item.getType()); attempt++) {
             item = getRandomItem();
         }
 
         rememberGivenItem(player, item.getType());
-        player.getInventory().addItem(item);
+        if (hotbarModeItem) {
+            ItemMeta meta = item.getItemMeta();
+            if (meta != null) {
+                meta.getPersistentDataContainer().set(hotbarItemKey, PersistentDataType.BYTE, (byte) 1);
+                item.setItemMeta(meta);
+            }
+        }
+        return item;
+    }
+
+    private boolean isHotbarModeItem(ItemStack item) {
+        if (item == null || !item.hasItemMeta()) return false;
+        Byte tagged = item.getItemMeta().getPersistentDataContainer()
+                .get(hotbarItemKey, PersistentDataType.BYTE);
+        return tagged != null && tagged == (byte) 1;
     }
 
     public void clearRecentItems(Iterable<UUID> playerIds) {

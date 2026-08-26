@@ -115,6 +115,23 @@ public class PlayerManager {
         removeActionItem(player, "admin_menu");
     }
 
+    public void giveCurrentArenaSettingsItem(Player player, String arenaName) {
+        removeCurrentArenaSettingsItem(player);
+        if (!player.hasPermission("pillars.admin")) return;
+
+        player.getInventory().setItem(5, actionItem(
+                Material.COMPARATOR,
+                translations.text("arena-admin-item.name"),
+                "arena_settings",
+                translations.text("arena-admin-item.arena", "arena", arenaName),
+                translations.text("arena-admin-item.lore")
+        ));
+    }
+
+    public void removeCurrentArenaSettingsItem(Player player) {
+        removeActionItem(player, "arena_settings");
+    }
+
     private void removeActionItem(Player player, String action) {
         for (int slot = 0; slot < player.getInventory().getSize(); slot++) {
             if (action.equals(getAction(player.getInventory().getItem(slot)))) {
