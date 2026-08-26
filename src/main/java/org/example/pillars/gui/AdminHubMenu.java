@@ -44,38 +44,44 @@ public class AdminHubMenu implements InventoryHolder {
     private void buildMenu() {
         ArenaMenuItemFactory.fill(inventory, Material.BLACK_STAINED_GLASS_PANE);
 
-        inventory.setItem(4, actionItem(
+        inventory.setItem(11, actionItem(
                 Material.MAP,
                 translations.text("menus.admin-hub.arena-settings"),
                 translations.list("menus.admin-hub.arena-settings-lore"),
                 "arenas"
         ));
-        inventory.setItem(10, actionItem(
+        inventory.setItem(19, actionItem(
                 Material.COMPARATOR,
                 translations.text("menus.admin-hub.rarity-chances"),
                 translations.list("menus.admin-hub.rarity-chances-lore"),
                 "rarity"
         ));
-        inventory.setItem(12, actionItem(
+        inventory.setItem(21, actionItem(
                 Material.CHEST,
                 translations.text("menus.admin-hub.common-items"),
                 translations.list("menus.admin-hub.common-items-lore"),
                 "pool:common"
         ));
-        inventory.setItem(14, actionItem(
+        inventory.setItem(23, actionItem(
                 Material.ENDER_CHEST,
                 translations.text("menus.admin-hub.rare-items"),
                 translations.list("menus.admin-hub.rare-items-lore"),
                 "pool:rare"
         ));
-        inventory.setItem(16, actionItem(
+        inventory.setItem(25, actionItem(
                 Material.NETHERITE_BLOCK,
                 translations.text("menus.admin-hub.legendary-items"),
                 translations.list("menus.admin-hub.legendary-items-lore"),
                 "pool:legendary"
         ));
         boolean eventsEnabled = gameSessionManager.areRandomEventsEnabled();
-        inventory.setItem(22, actionItem(
+        inventory.setItem(13, actionItem(
+                Material.YELLOW_GLAZED_TERRACOTTA,
+                translations.text("menus.admin-hub.lucky-blocks"),
+                translations.list("menus.admin-hub.lucky-blocks-lore"),
+                "lucky-blocks"
+        ));
+        inventory.setItem(15, actionItem(
                 eventsEnabled ? Material.LIME_DYE : Material.GRAY_DYE,
                 translations.text("menus.admin-hub.random-events"),
                 randomEventsLore(eventsEnabled),
@@ -139,10 +145,14 @@ public class AdminHubMenu implements InventoryHolder {
             return;
         }
 
+        if (action.equals("lucky-blocks")) {
+            new AdminLuckyBlockMenu(clicker, itemManager, hudManager, arenaManager, gameSessionManager).open();
+            return;
+        }
+
         if (action.equals("toggle-events")) {
-            boolean enabled = gameSessionManager.toggleRandomEvents();
+            gameSessionManager.toggleRandomEvents();
             buildMenu();
-            hudManager.sendRandomEventsToggled(clicker, enabled);
             return;
         }
 

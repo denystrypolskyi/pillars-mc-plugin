@@ -11,6 +11,13 @@ public final class UiPalette {
     public static final String INFO = "§b";
     public static final String BOLD = "§l";
 
+    // Semantic styles: change these to restyle every interface consistently.
+    public static final String TITLE = BRAND + BOLD;
+    public static final String SECTION = BRAND + BOLD;
+    public static final String LABEL = MUTED;
+    public static final String VALUE = TEXT;
+    public static final String ACCENT = BRAND;
+
     private UiPalette() {
     }
 }

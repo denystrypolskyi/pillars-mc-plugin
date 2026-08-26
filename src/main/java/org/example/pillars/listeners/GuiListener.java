@@ -11,6 +11,7 @@ import org.example.pillars.gui.AdminArenaSettingsMenu;
 import org.example.pillars.gui.AdminConfigMenu;
 import org.example.pillars.gui.AdminHubMenu;
 import org.example.pillars.gui.AdminItemPoolMenu;
+import org.example.pillars.gui.AdminLuckyBlockMenu;
 import org.example.pillars.gui.ArenaMenu;
 
 public class GuiListener implements Listener {
@@ -43,6 +44,9 @@ public class GuiListener implements Listener {
             menu.handleClick(event);
         } else if (AdminItemPoolMenu.isAdminItemPoolMenu(event.getClickedInventory())) {
             AdminItemPoolMenu menu = (AdminItemPoolMenu) event.getClickedInventory().getHolder();
+            menu.handleClick(event);
+        } else if (AdminLuckyBlockMenu.isAdminLuckyBlockMenu(event.getClickedInventory())) {
+            AdminLuckyBlockMenu menu = (AdminLuckyBlockMenu) event.getClickedInventory().getHolder();
             menu.handleClick(event);
         }
     }

@@ -9,6 +9,7 @@ import org.example.pillars.listeners.GuiListener;
 import org.example.pillars.listeners.LobbyListener;
 import org.example.pillars.listeners.LuckyBlockListener;
 import org.example.pillars.managers.*;
+import org.example.pillars.placeholders.ChroniclePlaceholderExpansion;
 
 public final class PillarsPlugin extends JavaPlugin {
     @Override
@@ -18,14 +19,20 @@ public final class PillarsPlugin extends JavaPlugin {
         TranslationManager translationManager = new TranslationManager(this);
         TeleportManager teleportManager = new TeleportManager();
         ItemManager itemManager = new ItemManager(this, translationManager);
+        LuckyBlockOutcomeManager luckyBlockOutcomeManager = new LuckyBlockOutcomeManager(
+                this,
+                itemManager,
+                translationManager
+        );
         SoundManager soundManager = new SoundManager();
-        HudManager hudManager = new HudManager(translationManager);
+        boolean tabEnabled = getServer().getPluginManager().isPluginEnabled("TAB");
+        HudManager hudManager = new HudManager(translationManager, tabEnabled);
         SpawnManager spawnManager = new SpawnManager();
 
         ArenaManager arenaManager = new ArenaManager(this, translationManager);
         StatsManager statsManager = new StatsManager(this, translationManager);
 
-        PlayerManager playerManager = new PlayerManager(this, teleportManager, hudManager);
+        PlayerManager playerManager = new PlayerManager(this, teleportManager, hudManager, statsManager);
 
         GameSessionManager gameSessionManager = new GameSessionManager(
                 this,
@@ -39,6 +46,17 @@ public final class PillarsPlugin extends JavaPlugin {
                 arenaManager
         );
 
+        if (getServer().getPluginManager().isPluginEnabled("PlaceholderAPI")) {
+            new ChroniclePlaceholderExpansion(
+                    this,
+                    translationManager,
+                    statsManager,
+                    gameSessionManager
+            ).register();
+        } else if (tabEnabled) {
+            getLogger().warning("TAB is enabled, but PlaceholderAPI is missing; Chronicle scoreboard values are unavailable.");
+        }
+
         getServer().getPluginManager().registerEvents(
                 new GameSessionPlayerListener(gameSessionManager),
                 this
@@ -46,7 +64,11 @@ public final class PillarsPlugin extends JavaPlugin {
 
         getServer().getPluginManager().registerEvents(new GuiListener(), this);
         getServer().getPluginManager().registerEvents(
-                new LuckyBlockListener(this, gameSessionManager, itemManager),
+                luckyBlockOutcomeManager,
+                this
+        );
+        getServer().getPluginManager().registerEvents(
+                new LuckyBlockListener(this, gameSessionManager, itemManager, luckyBlockOutcomeManager),
                 this
         );
         getServer().getPluginManager().registerEvents(

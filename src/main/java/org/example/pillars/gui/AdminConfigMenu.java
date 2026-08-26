@@ -45,25 +45,17 @@ public class AdminConfigMenu implements InventoryHolder {
         ArenaMenuItemFactory.fill(inventory, Material.BLACK_STAINED_GLASS_PANE);
 
         inventory.setItem(4, infoItem());
-        inventory.setItem(0, actionItem(Material.ARROW, translations.text("menus.common.back"), "back"));
+        inventory.setItem(18, actionItem(Material.ARROW, translations.text("menus.common.back"), "back"));
 
         String legendary = translations.text("rarities.legendary");
         String rare = translations.text("rarities.rare");
         String common = translations.text("rarities.common");
 
-        inventory.setItem(9, actionItem(Material.RED_DYE, translations.text("menus.rarity.decrease-five", "rarity", legendary), "legendary:-5"));
-        inventory.setItem(10, actionItem(Material.REDSTONE, translations.text("menus.rarity.decrease-one", "rarity", legendary), "legendary:-1"));
-        inventory.setItem(11, displayItem(Material.NETHERITE_BLOCK, UiPalette.BRAND + legendary, itemManager.getLegendaryPercent()));
-        inventory.setItem(12, actionItem(Material.GLOWSTONE_DUST, translations.text("menus.rarity.increase-one", "rarity", legendary), "legendary:1"));
-        inventory.setItem(13, actionItem(Material.LIME_DYE, translations.text("menus.rarity.increase-five", "rarity", legendary), "legendary:5"));
+        inventory.setItem(11, adjustableItem(Material.NETHERITE_BLOCK, UiPalette.BRAND + legendary, itemManager.getLegendaryPercent(), "legendary"));
 
-        inventory.setItem(18, actionItem(Material.ORANGE_DYE, translations.text("menus.rarity.decrease-five", "rarity", rare), "rare:-5"));
-        inventory.setItem(19, actionItem(Material.COPPER_INGOT, translations.text("menus.rarity.decrease-one", "rarity", rare), "rare:-1"));
-        inventory.setItem(20, displayItem(Material.OBSIDIAN, UiPalette.INFO + rare, itemManager.getRarePercent()));
-        inventory.setItem(21, actionItem(Material.LAPIS_LAZULI, translations.text("menus.rarity.increase-one", "rarity", rare), "rare:1"));
-        inventory.setItem(22, actionItem(Material.EMERALD, translations.text("menus.rarity.increase-five", "rarity", rare), "rare:5"));
+        inventory.setItem(13, adjustableItem(Material.OBSIDIAN, UiPalette.INFO + rare, itemManager.getRarePercent(), "rare"));
 
-        inventory.setItem(16, displayItem(Material.STONE, UiPalette.TEXT + common, itemManager.getCommonPercent()));
+        inventory.setItem(15, displayItem(Material.STONE, UiPalette.TEXT + common, itemManager.getCommonPercent()));
     }
 
     private ItemStack infoItem() {
@@ -100,6 +92,17 @@ public class AdminConfigMenu implements InventoryHolder {
         return item;
     }
 
+    private ItemStack adjustableItem(Material material, String name, int percent, String action) {
+        ItemStack item = displayItem(material, name, percent);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.setLore(List.of(translations.text("menus.rarity.control-lore")));
+            meta.getPersistentDataContainer().set(ACTION_KEY, PersistentDataType.STRING, action);
+            item.setItemMeta(meta);
+        }
+        return item;
+    }
+
     public void open() {
         player.openInventory(inventory);
     }
@@ -127,28 +130,23 @@ public class AdminConfigMenu implements InventoryHolder {
             return;
         }
 
-        String[] parts = action.split(":");
-        if (parts.length != 2) return;
-
-        int delta;
-        try {
-            delta = Integer.parseInt(parts[1]);
-        } catch (NumberFormatException ignored) {
-            return;
-        }
+        int delta = event.isLeftClick() ? 1 : event.isRightClick() ? -1 : 0;
+        if (delta == 0) return;
+        if (event.isShiftClick()) delta *= 5;
 
         int legendary = itemManager.getLegendaryPercent();
         int rare = itemManager.getRarePercent();
 
-        if (parts[0].equals("legendary")) {
+        if (action.equals("legendary")) {
             legendary += delta;
-        } else if (parts[0].equals("rare")) {
+        } else if (action.equals("rare")) {
             rare += delta;
+        } else {
+            return;
         }
 
         itemManager.setRarityPercentages(legendary, rare);
         buildMenu();
-        hudManager.sendAdminConfigUpdated(clicker, itemManager.getCommonPercent(), itemManager.getRarePercent(), itemManager.getLegendaryPercent());
     }
 
     @Override

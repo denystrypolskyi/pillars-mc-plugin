@@ -18,10 +18,12 @@ public class PlayerManager {
     private final TranslationManager translations;
     private final NamespacedKey actionKey;
     private final String lobbyWorldName;
+    private final StatsManager statsManager;
 
-    public PlayerManager(JavaPlugin plugin, TeleportManager teleportManager, HudManager hudManager) {
+    public PlayerManager(JavaPlugin plugin, TeleportManager teleportManager, HudManager hudManager, StatsManager statsManager) {
         this.teleportManager = teleportManager;
         this.hudManager = hudManager;
+        this.statsManager = statsManager;
         this.translations = hudManager.getTranslations();
         this.actionKey = new NamespacedKey(plugin, "lobby_action");
         this.lobbyWorldName = plugin.getConfig().getString("settings.lobbyWorldName", "world");
@@ -56,6 +58,8 @@ public class PlayerManager {
             giveLobbyItems(player);
         }
         hudManager.resetScoreboard(player);
+        var stats = statsManager.getStats(player.getUniqueId());
+        hudManager.updateLobbyScoreboard(player, stats.getKills(), stats.getWins(), stats.getGamesPlayed());
     }
 
     public void prepareSpectatorInventory(Player player) {

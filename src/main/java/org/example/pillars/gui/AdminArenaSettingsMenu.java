@@ -14,6 +14,7 @@ import org.example.pillars.entities.Arena;
 import org.example.pillars.enums.ArenaGameMode;
 import org.example.pillars.enums.ArenaResetResult;
 import org.example.pillars.enums.ItemDeliveryMode;
+import org.example.pillars.listeners.LuckyBlockListener;
 import org.example.pillars.managers.ArenaManager;
 import org.example.pillars.managers.GameSessionManager;
 import org.example.pillars.managers.HudManager;
@@ -25,7 +26,7 @@ import java.util.List;
 
 public class AdminArenaSettingsMenu implements InventoryHolder {
     private static final NamespacedKey ACTION_KEY = new NamespacedKey("pillars", "admin_arena_setting_action");
-    private static final int MENU_SIZE = 27;
+    private static final int MENU_SIZE = 36;
 
     private final Inventory inventory;
     private final Player player;
@@ -57,14 +58,14 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
     private void buildMenu() {
         ArenaMenuItemFactory.fill(inventory, Material.BLACK_STAINED_GLASS_PANE);
 
-        inventory.setItem(0, actionItem(
+        inventory.setItem(27, actionItem(
                 Material.ARROW,
                 translations.text("menus.common.back"),
                 List.of(translations.text("menus.arena-settings.back-lore")),
                 "back"
         ));
         inventory.setItem(4, infoItem());
-        inventory.setItem(8, actionItem(
+        inventory.setItem(20, actionItem(
                 arena.isJoiningOpen() ? Material.OAK_DOOR : Material.IRON_DOOR,
                 translations.text(arena.isJoiningOpen()
                         ? "menus.arena-settings.close-joining"
@@ -73,31 +74,17 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
                 "toggle_joining"
         ));
 
-        boolean minimumPlayersReached = arena.getMinPlayers() <= ArenaManager.MIN_PLAYERS_TO_START;
-        inventory.setItem(9, actionItem(
-                minimumPlayersReached ? Material.GRAY_DYE : Material.RED_DYE,
-                translations.text(minimumPlayersReached
-                        ? "menus.arena-settings.players-start-minimum"
-                        : "menus.arena-settings.players-start-decrease"),
-                List.of(
-                        translations.text("menus.arena-settings.minimum-two"),
-                        translations.text("menus.arena-settings.starts-at-lore")
-                ),
-                minimumPlayersReached ? "minimum_reached" : "min:-1"
-        ));
-        inventory.setItem(10, displayItem(
+        inventory.setItem(11, adjustableItem(
                 Material.PLAYER_HEAD,
                 translations.text("menus.arena-settings.players-to-start"),
                 arena.getMinPlayers() + "/" + arena.getSpawnPoints().size(),
+                "min",
                 translations.text("menus.arena-settings.starts-at-lore"),
-                translations.text("menus.arena-settings.leaves-stop-countdown")
+                translations.text("menus.arena-settings.leaves-stop-countdown"),
+                translations.text("menus.arena-settings.players-control")
         ));
-        inventory.setItem(11, actionItem(Material.LIME_DYE, translations.text("menus.arena-settings.players-start-increase"), List.of(
-                translations.text("menus.arena-settings.maximum-capacity"),
-                translations.text("menus.arena-settings.starts-at-lore")
-        ), "min:1"));
 
-        inventory.setItem(12, actionItem(
+        inventory.setItem(22, actionItem(
                 arena.getItemDeliveryMode() == ItemDeliveryMode.HOTBAR ? Material.CHEST : Material.DROPPER,
                 translations.text("menus.arena-settings.item-delivery-mode"),
                 translations.list(
@@ -107,12 +94,12 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
                                         + arena.getItemDeliveryMode().configValue()
                         ),
                         "seconds", arena.getItemCooldownSeconds(),
-                        "break_time", formatHalfSeconds(arena.getItemCooldownSeconds())
+                        "break_time", formatLuckyBlockBreakSeconds()
                 ),
                 "item_mode"
         ));
 
-        inventory.setItem(13, actionItem(
+        inventory.setItem(23, actionItem(
                 arena.isFloorEnabled() ? floorIcon(arena.getFloorMaterial()) : Material.LIGHT_GRAY_CONCRETE,
                 translations.text("menus.arena-settings.floor"),
                 translations.list(
@@ -126,7 +113,7 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
                 "floor"
         ));
 
-        inventory.setItem(14, actionItem(
+        inventory.setItem(21, actionItem(
                 arena.getGameMode() == ArenaGameMode.LUCKY_BLOCKS
                         ? Material.YELLOW_GLAZED_TERRACOTTA
                         : Material.BEDROCK,
@@ -136,49 +123,31 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
                         "mode", translations.text(
                                 "menus.arena-settings.game-modes." + arena.getGameMode().configValue()
                         ),
-                        "seconds", arena.getItemCooldownSeconds()
+                        "seconds", arena.getItemCooldownSeconds(),
+                        "break_time", formatLuckyBlockBreakSeconds()
                 ),
                 "game_mode"
         ));
 
-        inventory.setItem(15, actionItem(
-                Material.REDSTONE,
-                translations.text("menus.arena-settings.cooldown-decrease"),
-                List.of(translations.text("menus.arena-settings.cooldown-minimum")),
-                "cooldown:-1"
-        ));
-        inventory.setItem(16, displayItem(
+        inventory.setItem(13, adjustableItem(
                 Material.CLOCK,
                 translations.text("menus.arena-settings.item-cooldown"),
-                arena.getItemCooldownSeconds() + translations.text("units.second-short")
-        ));
-        inventory.setItem(17, actionItem(
-                Material.GLOWSTONE_DUST,
-                translations.text("menus.arena-settings.cooldown-increase"),
-                List.of(translations.text("menus.arena-settings.cooldown-increase-lore")),
-                "cooldown:1"
+                arena.getItemCooldownSeconds() + translations.text("units.second-short"),
+                "cooldown",
+                translations.text("menus.arena-settings.cooldown-minimum"),
+                translations.text("menus.arena-settings.cooldown-control")
         ));
 
-        inventory.setItem(18, actionItem(
-                Material.RED_DYE,
-                translations.text("menus.arena-settings.border-shrink-decrease"),
-                translations.list("menus.arena-settings.border-shrink-change-lore"),
-                "border:-30"
-        ));
-        inventory.setItem(19, displayItem(
+        inventory.setItem(15, adjustableItem(
                 Material.COMPASS,
                 translations.text("menus.arena-settings.border-shrink-time"),
                 arena.getBorderShrinkSeconds() + translations.text("units.second-short"),
-                translations.text("menus.arena-settings.border-shrink-apply-lore")
-        ));
-        inventory.setItem(20, actionItem(
-                Material.LIME_DYE,
-                translations.text("menus.arena-settings.border-shrink-increase"),
-                translations.list("menus.arena-settings.border-shrink-change-lore"),
-                "border:30"
+                "border",
+                translations.text("menus.arena-settings.border-shrink-apply-lore"),
+                translations.text("menus.arena-settings.border-control")
         ));
 
-        inventory.setItem(22, actionItem(
+        inventory.setItem(24, actionItem(
                 Material.SPYGLASS,
                 translations.text("menus.arena-settings.spectate"),
                 translations.list("menus.arena-settings.spectate-lore"),
@@ -186,21 +155,21 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
         ));
 
         if (gameSessionManager.isArenaResetting(arena)) {
-            inventory.setItem(26, actionItem(
+            inventory.setItem(35, actionItem(
                     Material.GRAY_DYE,
                     translations.text("menus.arena-settings.reset-in-progress"),
                     translations.list("menus.arena-settings.reset-in-progress-lore"),
                     "reset_in_progress"
             ));
         } else if (resetConfirmationPending) {
-            inventory.setItem(26, actionItem(
+            inventory.setItem(35, actionItem(
                     Material.RED_CONCRETE,
                     translations.text("menus.arena-settings.confirm-reset"),
                     translations.list("menus.arena-settings.confirm-reset-lore"),
                     "confirm_reset"
             ));
         } else {
-            inventory.setItem(26, actionItem(
+            inventory.setItem(35, actionItem(
                     Material.TNT,
                     translations.text("menus.arena-settings.reset-arena"),
                     translations.list("menus.arena-settings.reset-arena-lore"),
@@ -226,10 +195,8 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
         return material;
     }
 
-    private String formatHalfSeconds(int seconds) {
-        return seconds % 2 == 0
-                ? Integer.toString(seconds / 2)
-                : (seconds / 2) + ".5";
+    private String formatLuckyBlockBreakSeconds() {
+        return Double.toString(LuckyBlockListener.BREAK_DURATION_TICKS / 20.0);
     }
 
     private ItemStack displayItem(Material material, String name, String value, String... lore) {
@@ -240,6 +207,16 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
             meta.setLore(lore.length == 0
                     ? List.of(translations.text("menus.common.current-value"))
                     : List.of(lore));
+            item.setItemMeta(meta);
+        }
+        return item;
+    }
+
+    private ItemStack adjustableItem(Material material, String name, String value, String action, String... lore) {
+        ItemStack item = displayItem(material, name, value, lore);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.getPersistentDataContainer().set(ACTION_KEY, PersistentDataType.STRING, action);
             item.setItemMeta(meta);
         }
         return item;
@@ -285,7 +262,6 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
 
         if (action.equals("toggle_joining")) {
             gameSessionManager.setArenaJoiningOpen(arena, !arena.isJoiningOpen());
-            hudManager.broadcastArenaJoiningChanged(clicker, arena);
             buildMenu();
             return;
         }
@@ -308,7 +284,6 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
 
         if (action.equals("game_mode")) {
             arenaManager.updateArenaGameMode(arena, arena.getGameMode().next());
-            hudManager.sendArenaGameModeUpdated(clicker, arena);
             buildMenu();
             return;
         }
@@ -335,36 +310,27 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
             return;
         }
 
-        String[] parts = action.split(":");
-        if (parts.length != 2) return;
-
-        int delta;
-        try {
-            delta = Integer.parseInt(parts[1]);
-        } catch (NumberFormatException ignored) {
-            return;
-        }
+        int direction = event.isLeftClick() ? 1 : event.isRightClick() ? -1 : 0;
+        if (direction == 0) return;
 
         int minPlayers = arena.getMinPlayers();
         int cooldown = arena.getItemCooldownSeconds();
 
-        if (parts[0].equals("min")) {
-            minPlayers += delta;
-        } else if (parts[0].equals("cooldown")) {
-            cooldown += delta;
-        } else if (parts[0].equals("border")) {
-            int adjustedDelta = event.isShiftClick() ? delta * 2 : delta;
+        if (action.equals("min")) {
+            minPlayers += direction * (event.isShiftClick() ? 5 : 1);
+        } else if (action.equals("cooldown")) {
+            cooldown += direction * (event.isShiftClick() ? 5 : 1);
+        } else if (action.equals("border")) {
+            int adjustedDelta = direction * (event.isShiftClick() ? 60 : 30);
             arenaManager.updateArenaBorderShrinkSeconds(
                     arena,
                     arena.getBorderShrinkSeconds() + adjustedDelta
             );
-            hudManager.sendArenaSettingsUpdated(clicker, arena);
             buildMenu();
             return;
         }
 
         arenaManager.updateSafeArenaSettings(arena, minPlayers, cooldown);
-        hudManager.sendArenaSettingsUpdated(clicker, arena);
         buildMenu();
     }
 

@@ -115,7 +115,7 @@ public final class AdminFloorMaterialMenu implements InventoryHolder {
                     "page:" + (page - 1)
             ));
         }
-        inventory.setItem(49, ArenaMenuItemFactory.visualItem(
+        inventory.setItem(53, ArenaMenuItemFactory.visualItem(
                 materialIcon(arena.getFloorMaterial()),
                 translations.text("menus.floor-material.current"),
                 List.of(translations.text(
@@ -124,13 +124,13 @@ public final class AdminFloorMaterialMenu implements InventoryHolder {
                 ))
         ));
         int pageCount = Math.max(1, (materials.size() + PAGE_SIZE - 1) / PAGE_SIZE);
-        inventory.setItem(50, ArenaMenuItemFactory.visualItem(
+        inventory.setItem(49, ArenaMenuItemFactory.visualItem(
                 Material.PAPER,
                 translations.text("menus.floor-material.page", "current", page + 1, "total", pageCount),
                 List.of()
         ));
         if (page + 1 < pageCount) {
-            inventory.setItem(53, actionItem(
+            inventory.setItem(50, actionItem(
                     Material.ARROW,
                     translations.text("menus.floor-material.next-page"),
                     "page:" + (page + 1)

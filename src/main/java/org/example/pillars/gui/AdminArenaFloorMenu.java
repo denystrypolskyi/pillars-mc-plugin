@@ -66,7 +66,7 @@ public final class AdminArenaFloorMenu implements InventoryHolder {
         int minimumFloorY = arenaManager.getMinimumFloorY(arena);
         int maximumFloorY = arenaManager.getMaximumFloorY(arena);
 
-        inventory.setItem(0, actionItem(
+        inventory.setItem(36, actionItem(
                 Material.ARROW,
                 translations.text("menus.common.back"),
                 List.of(translations.text("menus.arena-floor.back-lore")),
@@ -86,7 +86,7 @@ public final class AdminArenaFloorMenu implements InventoryHolder {
                 translations.list("menus.arena-floor.toggle-lore"),
                 "toggle"
         ));
-        inventory.setItem(12, actionItem(
+        inventory.setItem(13, actionItem(
                 materialIcon(arena.getFloorMaterial()),
                 translations.text("menus.arena-floor.material"),
                 translations.list(
@@ -95,54 +95,31 @@ public final class AdminArenaFloorMenu implements InventoryHolder {
                 ),
                 "material"
         ));
-        inventory.setItem(14, symmetryItem());
-        inventory.setItem(16, applyItem());
+        inventory.setItem(16, symmetryItem());
+        inventory.setItem(44, applyItem());
 
         inventory.setItem(20, shapeItem(FloorShape.SQUARE));
         inventory.setItem(22, shapeItem(FloorShape.SQUARE_RING));
         inventory.setItem(24, shapeItem(FloorShape.ISLANDS));
 
-        inventory.setItem(28, actionItem(
-                Material.RED_DYE,
-                translations.text("menus.arena-floor.radius-decrease"),
-                translations.list("menus.arena-floor.adjust-lore"),
-                "radius:-1"
-        ));
-        inventory.setItem(29, displayItem(
+        inventory.setItem(30, adjustableItem(
                 Material.COMPASS,
                 translations.text("menus.arena-floor.radius"),
-                String.valueOf(arena.getFloorRadius())
+                String.valueOf(arena.getFloorRadius()),
+                "radius",
+                translations.text("menus.arena-floor.adjust-control")
         ));
-        inventory.setItem(30, actionItem(
-                Material.LIME_DYE,
-                translations.text("menus.arena-floor.radius-increase"),
-                translations.list("menus.arena-floor.adjust-lore"),
-                "radius:1"
-        ));
-        inventory.setItem(32, actionItem(
-                Material.RED_DYE,
-                translations.text("menus.arena-floor.y-decrease"),
-                translations.list(
-                        "menus.arena-floor.height-adjust-lore",
-                        "minimum", minimumFloorY,
-                        "maximum", maximumFloorY
-                ),
-                "y:-1"
-        ));
-        inventory.setItem(33, displayItem(
+        inventory.setItem(32, adjustableItem(
                 Material.SCAFFOLDING,
                 translations.text("menus.arena-floor.y"),
-                arena.getFloorY() + " " + UiPalette.SEPARATOR + "(" + minimumFloorY + "–" + maximumFloorY + ")"
-        ));
-        inventory.setItem(34, actionItem(
-                Material.LIME_DYE,
-                translations.text("menus.arena-floor.y-increase"),
-                translations.list(
-                        "menus.arena-floor.height-adjust-lore",
+                arena.getFloorY() + " " + UiPalette.SEPARATOR + "(" + minimumFloorY + "–" + maximumFloorY + ")",
+                "y",
+                translations.text(
+                        "menus.arena-floor.height-control",
                         "minimum", minimumFloorY,
                         "maximum", maximumFloorY
                 ),
-                "y:1"
+                translations.text("menus.arena-floor.adjust-control")
         ));
     }
 
@@ -286,20 +263,14 @@ public final class AdminArenaFloorMenu implements InventoryHolder {
             return;
         }
 
-        String[] parts = action.split(":");
-        if (parts.length != 2) return;
-        int delta;
-        try {
-            delta = Integer.parseInt(parts[1]);
-        } catch (NumberFormatException ignored) {
-            return;
-        }
+        int delta = event.isLeftClick() ? 1 : event.isRightClick() ? -1 : 0;
+        if (delta == 0) return;
         if (event.isShiftClick()) delta *= 5;
 
         int radius = arena.getFloorRadius();
         int y = arena.getFloorY();
-        if (parts[0].equals("radius")) radius += delta;
-        if (parts[0].equals("y")) y += delta;
+        if (action.equals("radius")) radius += delta;
+        if (action.equals("y")) y += delta;
         save(arena.isFloorEnabled(), arena.getFloorMaterial(), arena.getFloorShape(), radius, y);
     }
 
@@ -338,6 +309,17 @@ public final class AdminArenaFloorMenu implements InventoryHolder {
         if (meta != null) {
             meta.setDisplayName(name + " " + UiPalette.TEXT + value);
             meta.setLore(List.of(translations.text("menus.common.current-value")));
+            item.setItemMeta(meta);
+        }
+        return item;
+    }
+
+    private ItemStack adjustableItem(Material material, String name, String value, String action, String... lore) {
+        ItemStack item = displayItem(material, name, value);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.setLore(List.of(lore));
+            meta.getPersistentDataContainer().set(ACTION_KEY, PersistentDataType.STRING, action);
             item.setItemMeta(meta);
         }
         return item;

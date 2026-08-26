@@ -20,6 +20,7 @@ import org.bukkit.event.entity.EntityExplodeEvent;
 import org.example.pillars.GameSession;
 import org.example.pillars.managers.GameSessionManager;
 import org.example.pillars.managers.ItemManager;
+import org.example.pillars.managers.LuckyBlockOutcomeManager;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 
@@ -28,16 +29,25 @@ import java.util.Map;
 import java.util.UUID;
 
 public class LuckyBlockListener implements Listener {
+    public static final int BREAK_DURATION_TICKS = 6;
+
     private final GameSessionManager gameSessionManager;
     private final ItemManager itemManager;
+    private final LuckyBlockOutcomeManager outcomeManager;
     private final JavaPlugin plugin;
     private final Map<UUID, BukkitRunnable> miningTasks = new HashMap<>();
     private final Map<UUID, Location> miningBlocks = new HashMap<>();
 
-    public LuckyBlockListener(JavaPlugin plugin, GameSessionManager gameSessionManager, ItemManager itemManager) {
+    public LuckyBlockListener(
+            JavaPlugin plugin,
+            GameSessionManager gameSessionManager,
+            ItemManager itemManager,
+            LuckyBlockOutcomeManager outcomeManager
+    ) {
         this.plugin = plugin;
         this.gameSessionManager = gameSessionManager;
         this.itemManager = itemManager;
+        this.outcomeManager = outcomeManager;
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -92,7 +102,13 @@ public class LuckyBlockListener implements Listener {
 
         if (session.removeLuckyBlock(event.getBlock())) {
             cancelMiningAt(event.getBlock().getLocation());
-            itemManager.giveRandomItem(event.getPlayer());
+            Player player = event.getPlayer();
+            Location blockLocation = event.getBlock().getLocation();
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (player.isOnline() && session.isLuckyBlocksModeActive()) {
+                    outcomeManager.trigger(player, blockLocation, session);
+                }
+            });
         }
     }
 
@@ -136,7 +152,7 @@ public class LuckyBlockListener implements Listener {
         cancelMining(playerId);
 
         Location blockLocation = block.getLocation();
-        int totalTicks = Math.max(1, session.getActiveItemIntervalSeconds() * 10);
+        int totalTicks = BREAK_DURATION_TICKS;
         int crackSourceId = playerId.hashCode();
         miningBlocks.put(playerId, blockLocation);
 
@@ -176,7 +192,7 @@ public class LuckyBlockListener implements Listener {
                         1.0F,
                         1.15F
                 );
-                itemManager.giveRandomItem(player);
+                outcomeManager.trigger(player, blockLocation, session);
                 cancelMiningAt(blockLocation);
             }
         };
@@ -213,4 +229,5 @@ public class LuckyBlockListener implements Listener {
             }
         }
     }
+
 }

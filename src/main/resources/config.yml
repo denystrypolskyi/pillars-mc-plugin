@@ -9,6 +9,18 @@ settings:
   borderSpawnPaddingBlocks: 10
   spawnPillarHeightBlocks: 5
   lobbyWorldName: "lobby"
+  luckyBlocks:
+    itemChancePercent: 85
+    antiRepeatHistorySize: 4
+    fluidDurationTicks: 100
+    mobDurationTicks: 400
+    tntFuseTicks: 60
+    explosionPower: 2.0
+    tntBlockDamage: false
+    categories:
+      goodPercent: 7
+      neutralPercent: 3
+      badPercent: 5
   gameEvents:
     enabled: true
     minimumDelaySeconds: 30

@@ -86,4 +86,10 @@ public class StatsManager {
         stats.setWins(stats.getWins() + 1);
         saveStats();
     }
+
+    public void incrementGamesPlayed(UUID playerUUID) {
+        PlayerStats stats = getStats(playerUUID);
+        stats.setGamesPlayed(stats.getGamesPlayed() + 1);
+        saveStats();
+    }
 }

@@ -3,6 +3,7 @@ package org.example.pillars.managers;
 import org.bukkit.ChatColor;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.example.pillars.ui.UiPalette;
 
 import java.io.File;
 import java.io.IOException;
@@ -164,10 +165,10 @@ public final class TranslationManager {
         }
 
         if (key.equals("scoreboard.title")) {
-            return brandValue("scoreboard-title", "&6&lPILLARS");
+            return UiPalette.TITLE + "CHRONICLE";
         }
 
-        String brandName = brandValue("name", "Pillars");
+        String brandName = "Chronicle";
         String styled = value
                 .replaceAll("(?i)^\\s*&6&lpillars &8»\\s*", "")
                 .replaceAll("(?i)/pillars\\b", "/p")
@@ -186,17 +187,8 @@ public final class TranslationManager {
         }
 
         return firstLine
-                ? "&6&l" + brandValue("name", "Pillars") + " &8» &r" + value
+                ? UiPalette.TITLE + "Chronicle " + UiPalette.SEPARATOR + "» §r" + value
                 : "&8  ↳ &r" + value;
-    }
-
-    private String brandValue(String key, String fallback) {
-        String path = "brand." + key;
-        String value = selected.getString(path);
-        if (value == null) value = defaultSelected.getString(path);
-        if (value == null) value = english.getString(path);
-        if (value == null) value = defaultEnglish.getString(path);
-        return value == null || value.isBlank() ? fallback : value;
     }
 
     private void saveLanguageFile(String languageCode) {

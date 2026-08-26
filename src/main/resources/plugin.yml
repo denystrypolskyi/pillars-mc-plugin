@@ -2,6 +2,7 @@ name: PillarsPlugin
 version: 1.0
 main: org.example.pillars.PillarsPlugin
 api-version: 1.21
+softdepend: [PlaceholderAPI, TAB]
 commands:
   pillars:
     description: main game command

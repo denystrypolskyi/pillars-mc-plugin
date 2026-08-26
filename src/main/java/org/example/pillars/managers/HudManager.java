@@ -1,6 +1,7 @@
 package org.example.pillars.managers;
 
 import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.scoreboard.*;
@@ -18,6 +19,7 @@ import java.util.*;
 
 public class HudManager {
     private final TranslationManager translations;
+    private final boolean externalScoreboard;
     private final Map<UUID, Scoreboard> playerScoreboards = new HashMap<>();
     private final Map<UUID, Map<String, Team>> playerTeams = new HashMap<>();
 
@@ -35,17 +37,19 @@ public class HudManager {
     private static final int MEDIUM_STAY = 30;
     private static final int LONG_STAY = 50;
 
-    public HudManager(TranslationManager translations) {
+    public HudManager(TranslationManager translations, boolean externalScoreboard) {
         this.translations = translations;
+        this.externalScoreboard = externalScoreboard;
     }
 
     public TranslationManager getTranslations() {
         return translations;
     }
 
-    private void initializeScoreboard(@NotNull Player player) {
+    private void initializeScoreboard(@NotNull Player player, boolean lobby) {
         UUID uuid = player.getUniqueId();
-        if (playerScoreboards.containsKey(uuid)) return;
+        playerScoreboards.remove(uuid);
+        playerTeams.remove(uuid);
 
         Scoreboard board = Bukkit.getScoreboardManager().getNewScoreboard();
         Objective obj = board.registerNewObjective("pillarshud", "dummy", translations.text("scoreboard.title"));
@@ -53,18 +57,11 @@ public class HudManager {
 
         Map<String, Team> teams = new LinkedHashMap<>();
 
-        String[] lineKeys = {
-                "infoHeader",
-                "playerLine",
-                "onlineLine",
-                "statusLine",
-                "arenaLine",
-                "statHeader",
-                "killsLine",
-                "winsLine"
-        };
+        String[] lineKeys = lobby
+                ? new String[]{"infoHeader", "playerLine", "statHeader", "killsLine", "rateLine"}
+                : new String[]{"infoHeader", "playerLine", "onlineLine", "statusLine", "arenaLine"};
 
-        int score = 11;
+        int score = lineKeys.length + 2;
 
         obj.getScore(nextBlank()).setScore(score--);
 
@@ -94,39 +91,61 @@ public class HudManager {
     }
 
     public void updatePlayerScoreboard(Player player, int players, int maxPlayers, GameState state,
-                                       String arenaName, int kills, int wins) {
-        initializeScoreboard(player);
+                                       String arenaName, int kills, int wins, int gamesPlayed) {
+        if (externalScoreboard) return;
+        initializeScoreboard(player, false);
 
         UUID uuid = player.getUniqueId();
         Map<String, Team> teams = playerTeams.get(uuid);
-        if (teams == null) return;
+        if (teams == null || !teams.keySet().containsAll(List.of(
+                "infoHeader", "playerLine", "onlineLine", "statusLine", "arenaLine"
+        ))) return;
 
-        teams.get("infoHeader").setPrefix(translations.text("scoreboard.info-header"));
+        teams.get("infoHeader").setPrefix(isolate(UiPalette.SECTION + scoreboardText("scoreboard.info-header")));
 
-        teams.get("playerLine").setPrefix(translations.text("scoreboard.player-label"));
-        teams.get("playerLine").setSuffix(UiPalette.TEXT + player.getName());
+        teams.get("playerLine").setPrefix(isolate(UiPalette.LABEL + scoreboardText("scoreboard.player-label")));
+        teams.get("playerLine").setSuffix(isolate(UiPalette.VALUE + player.getName()));
 
-        teams.get("onlineLine").setPrefix(translations.text("scoreboard.online-label"));
-        teams.get("onlineLine").setSuffix(
-                UiPalette.TEXT + players + UiPalette.SEPARATOR + "/" + UiPalette.TEXT + maxPlayers
-        );
+        teams.get("onlineLine").setPrefix(isolate(UiPalette.LABEL + scoreboardText("scoreboard.online-label")));
+        teams.get("onlineLine").setSuffix(isolate(
+                UiPalette.VALUE + players + UiPalette.SEPARATOR + "/" + UiPalette.VALUE + maxPlayers
+        ));
 
-        teams.get("statusLine").setPrefix(translations.text("scoreboard.status-label"));
+        teams.get("statusLine").setPrefix(isolate(UiPalette.LABEL + scoreboardText("scoreboard.status-label")));
         teams.get("statusLine").setSuffix(formatState(state));
 
-        teams.get("arenaLine").setPrefix(translations.text("scoreboard.arena-label"));
-        teams.get("arenaLine").setSuffix(UiPalette.TEXT + arenaName);
+        teams.get("arenaLine").setPrefix(isolate(UiPalette.LABEL + scoreboardText("scoreboard.arena-label")));
+        teams.get("arenaLine").setSuffix(isolate(UiPalette.VALUE + arenaName));
 
-        teams.get("statHeader").setPrefix(translations.text("scoreboard.stats-header"));
+    }
 
-        teams.get("killsLine").setPrefix(translations.text("scoreboard.kills-label"));
-        teams.get("killsLine").setSuffix(UiPalette.DANGER + kills);
-
-        teams.get("winsLine").setPrefix(translations.text("scoreboard.wins-label"));
-        teams.get("winsLine").setSuffix(UiPalette.BRAND + wins);
+    public void updateLobbyScoreboard(Player player, int kills, int wins, int gamesPlayed) {
+        if (externalScoreboard) return;
+        initializeScoreboard(player, true);
+        Map<String, Team> teams = playerTeams.get(player.getUniqueId());
+        if (teams == null || !teams.keySet().containsAll(List.of(
+                "infoHeader", "playerLine", "statHeader", "killsLine", "rateLine"
+        ))) return;
+        teams.get("infoHeader").setPrefix(isolate(UiPalette.SECTION + scoreboardText("scoreboard.info-header")));
+        teams.get("playerLine").setPrefix(isolate(UiPalette.LABEL + scoreboardText("scoreboard.player-label")));
+        teams.get("playerLine").setSuffix(isolate(UiPalette.VALUE + player.getName()));
+        teams.get("statHeader").setPrefix(isolate(UiPalette.SECTION + scoreboardText("scoreboard.stats-header")));
+        teams.get("killsLine").setPrefix(isolate(UiPalette.LABEL + scoreboardText("scoreboard.kills-label")));
+        teams.get("killsLine").setSuffix(isolate(UiPalette.VALUE + kills));
+        int winRate = gamesPlayed <= 0 ? 0 : (int) Math.round(wins * 100.0 / gamesPlayed);
+        teams.get("rateLine").setPrefix(isolate(UiPalette.LABEL + scoreboardText("scoreboard.rate-label")));
+        teams.get("rateLine").setSuffix(isolate(
+                UiPalette.VALUE + wins
+                        + UiPalette.SEPARATOR + "/"
+                        + UiPalette.TEXT + gamesPlayed
+                        + UiPalette.SEPARATOR + " ("
+                        + UiPalette.ACCENT + winRate + "%"
+                        + UiPalette.SEPARATOR + ")"
+        ));
     }
 
     public void updateArenaInfoForAllPlayers(Set<UUID> playersSet, int activeCount, int max, GameState state, String arenaName) {
+        if (externalScoreboard) return;
         for (UUID uuid : playersSet) {
             Player p = Bukkit.getPlayer(uuid);
             if (p == null || !p.isOnline()) continue;
@@ -136,9 +155,9 @@ public class HudManager {
 
             Team online = teams.get("onlineLine");
             if (online != null) {
-                online.setSuffix(
+                online.setSuffix(isolate(
                         UiPalette.TEXT + activeCount + UiPalette.SEPARATOR + "/" + UiPalette.TEXT + max
-                );
+                ));
             }
 
             Team status = teams.get("statusLine");
@@ -148,24 +167,25 @@ public class HudManager {
 
             Team arena = teams.get("arenaLine");
             if (arena != null) {
-                arena.setSuffix(UiPalette.TEXT + arenaName);
+                arena.setSuffix(isolate(UiPalette.VALUE + arenaName));
             }
         }
     }
 
     public void updatePlayerStats(Player player, int kills, int wins) {
+        if (externalScoreboard) return;
         UUID uuid = player.getUniqueId();
         Map<String, Team> teams = playerTeams.get(uuid);
         if (teams == null) return;
 
         Team killsTeam = teams.get("killsLine");
         if (killsTeam != null) {
-            killsTeam.setSuffix(UiPalette.DANGER + kills);
+            killsTeam.setSuffix(isolate(UiPalette.VALUE + kills));
         }
 
         Team winsTeam = teams.get("winsLine");
         if (winsTeam != null) {
-            winsTeam.setSuffix(UiPalette.BRAND + wins);
+            winsTeam.setSuffix(isolate(UiPalette.VALUE + wins));
         }
     }
 
@@ -173,7 +193,9 @@ public class HudManager {
         UUID uuid = player.getUniqueId();
         playerScoreboards.remove(uuid);
         playerTeams.remove(uuid);
-        player.setScoreboard(Bukkit.getScoreboardManager().getNewScoreboard());
+        if (!externalScoreboard) {
+            player.setScoreboard(Bukkit.getScoreboardManager().getNewScoreboard());
+        }
     }
 
     public void resetScoreboard(Player player) {
@@ -850,15 +872,24 @@ public class HudManager {
 
     private String formatState(GameState state) {
         if (state == null) {
-            return translations.text("scoreboard.state.unknown");
+            return isolate(UiPalette.VALUE + scoreboardText("scoreboard.state.unknown"));
         }
 
         return switch (state) {
-            case WAITING -> translations.text("scoreboard.state.waiting");
-            case STARTING, COUNTDOWN -> translations.text("scoreboard.state.starting");
-            case RUNNING -> translations.text("scoreboard.state.running");
-            case ENDING -> translations.text("scoreboard.state.ending");
-            case RESETTING -> translations.text("scoreboard.state.resetting");
+            case WAITING -> isolate(UiPalette.VALUE + scoreboardText("scoreboard.state.waiting"));
+            case STARTING, COUNTDOWN -> isolate(UiPalette.VALUE + scoreboardText("scoreboard.state.starting"));
+            case RUNNING -> isolate(UiPalette.VALUE + scoreboardText("scoreboard.state.running"));
+            case ENDING -> isolate(UiPalette.VALUE + scoreboardText("scoreboard.state.ending"));
+            case RESETTING -> isolate(UiPalette.VALUE + scoreboardText("scoreboard.state.resetting"));
         };
+    }
+
+    private String isolate(String value) {
+        return "§r" + value + "§r";
+    }
+
+    private String scoreboardText(String key) {
+        String stripped = ChatColor.stripColor(translations.text(key));
+        return stripped == null ? "" : stripped;
     }
 }

@@ -224,7 +224,6 @@ public class AdminItemPoolMenu implements InventoryHolder {
         }
 
         if (itemManager.addItemWithDefaultWeight(rarity, heldItem.getType())) {
-            hudManager.sendItemConfigured(clicker, heldItem.getType(), rarity, itemManager.getDefaultWeight(rarity));
             new AdminItemPoolMenu(clicker, arenaManager, gameSessionManager, itemManager, hudManager, rarity, page).open();
         }
     }
@@ -238,7 +237,6 @@ public class AdminItemPoolMenu implements InventoryHolder {
         }
 
         if (itemManager.removeItem(rarity, material)) {
-            hudManager.sendItemRemoved(clicker, material, rarity);
             new AdminItemPoolMenu(clicker, arenaManager, gameSessionManager, itemManager, hudManager, rarity, page).open();
         }
     }

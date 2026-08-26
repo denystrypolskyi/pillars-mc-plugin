@@ -139,7 +139,8 @@ public class GameSession {
 
         updateArenaHudForAllPlayers();
 
-        hudManager.updatePlayerScoreboard(player, getArenaPlayerCount(), arena.getSpawnPoints().size(), state, arena.getDisplayName(), statsManager.getStats(player.getUniqueId()).getKills(), statsManager.getStats(player.getUniqueId()).getWins());
+        var stats = statsManager.getStats(player.getUniqueId());
+        hudManager.updatePlayerScoreboard(player, getArenaPlayerCount(), arena.getSpawnPoints().size(), state, arena.getDisplayName(), stats.getKills(), stats.getWins(), stats.getGamesPlayed());
         if (state == GameState.WAITING && activePlayers.size() < getMinPlayers()) {
             startWaitingForPlayersTask();
         }
@@ -192,7 +193,6 @@ public class GameSession {
         }
 
         playerManager.resetAndReturnToLobby(player, lobbyWorldName);
-        hudManager.cleanupPlayerScoreboard(player);
         updateArenaHudForAllPlayers();
         if (state == GameState.WAITING && !activePlayers.isEmpty()) {
             startWaitingForPlayersTask();
@@ -354,7 +354,6 @@ public class GameSession {
             } else {
                 player.setGameMode(GameMode.SURVIVAL);
                 playerManager.resetAndReturnToLobby(player, lobbyWorldName);
-                hudManager.resetScoreboard(player);
 
                 spectators.remove(uuid);
 
@@ -482,7 +481,6 @@ public class GameSession {
 
         for (Player player : playersToReturn) {
             playerManager.resetAndReturnToLobby(player, lobbyWorldName);
-            hudManager.cleanupPlayerScoreboard(player);
         }
 
         resetSession();
@@ -732,6 +730,7 @@ public class GameSession {
 
             counter[0]--;
             if (counter[0] < 0) {
+                for (UUID uuid : getActivePlayerIds()) statsManager.incrementGamesPlayed(uuid);
                 activeGameMode = arena.getGameMode();
                 activeItemIntervalSeconds = Math.max(1, arena.getItemCooldownSeconds());
                 prepareOccupiedPillarsForGameMode();
