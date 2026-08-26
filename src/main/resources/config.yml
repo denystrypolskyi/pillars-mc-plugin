@@ -71,11 +71,17 @@ arenas:
       - [6, 100, -6]
       - [6, 100, 6]
     displayName:
-      en: "arena 4 #1"
-      ru: "арена 4 №1"
+      en: "mini #1"
+      ru: "мини №1"
     joiningOpen: true
     minPlayers: 2
     itemCooldownSeconds: 5
+    floor:
+      enabled: true
+      shape: square
+      radius: 8
+      y: 75
+      material: LAVA
 
   arena4_2:
     worldName: "arena4_2"
@@ -85,11 +91,17 @@ arenas:
       - [0, 100, -6]
       - [0, 100, 6]
     displayName:
-      en: "arena 4 #2"
-      ru: "арена 4 №2"
+      en: "mini #2"
+      ru: "мини №2"
     joiningOpen: true
     minPlayers: 2
     itemCooldownSeconds: 5
+    floor:
+      enabled: true
+      shape: square
+      radius: 8
+      y: 75
+      material: LAVA
 
   arena4_3:
     worldName: "arena4_3"
@@ -99,11 +111,17 @@ arenas:
       - [-6, 100, 6]
       - [6, 100, 6]
     displayName:
-      en: "arena 4 #3"
-      ru: "арена 4 №3"
+      en: "mini #3"
+      ru: "мини №3"
     joiningOpen: true
     minPlayers: 2
     itemCooldownSeconds: 5
+    floor:
+      enabled: true
+      shape: square
+      radius: 8
+      y: 75
+      material: LAVA
 
   # ------------------ 8 players ------------------
   arena8_1:
@@ -118,11 +136,17 @@ arenas:
       - [0, 100, -14]
       - [9.9, 100, -9.9]
     displayName:
-      en: "arena 8 #1"
-      ru: "арена 8 №1"
+      en: "standard #1"
+      ru: "стандарт №1"
     joiningOpen: true
     minPlayers: 2
     itemCooldownSeconds: 3
+    floor:
+      enabled: true
+      shape: square
+      radius: 16
+      y: 75
+      material: LAVA
 
   arena8_2:
     worldName: "arena8_2"
@@ -136,11 +160,17 @@ arenas:
       - [-9.9, 100, -9.9]
       - [9.9, 100, -9.9]
     displayName:
-      en: "arena 8 #2"
-      ru: "арена 8 №2"
+      en: "standard #2"
+      ru: "стандарт №2"
     joiningOpen: true
     minPlayers: 2
     itemCooldownSeconds: 3
+    floor:
+      enabled: true
+      shape: square
+      radius: 16
+      y: 75
+      material: LAVA
 
   arena8_3:
     worldName: "arena8_3"
@@ -154,11 +184,17 @@ arenas:
       - [-9.9, 100, 9.9]
       - [-9.9, 100, -9.9]
     displayName:
-      en: "arena 8 #3"
-      ru: "арена 8 №3"
+      en: "standard #3"
+      ru: "стандарт №3"
     joiningOpen: true
     minPlayers: 2
     itemCooldownSeconds: 3
+    floor:
+      enabled: true
+      shape: square
+      radius: 16
+      y: 75
+      material: LAVA
 
   # ------------------ 12 players ------------------
   arena12_1:
@@ -177,11 +213,17 @@ arenas:
       - [9.0, 100, -15.59]
       - [15.59, 100, -9.0]
     displayName:
-      en: "arena 12 #1"
-      ru: "арена 12 №1"
+      en: "large #1"
+      ru: "большая №1"
     joiningOpen: true
     minPlayers: 2
     itemCooldownSeconds: 3
+    floor:
+      enabled: true
+      shape: square
+      radius: 20
+      y: 75
+      material: LAVA
 
   arena12_2:
     worldName: "arena12_2"
@@ -199,11 +241,17 @@ arenas:
       - [9.0, 100, -15.59]
       - [15.59, 100, -9.0]
     displayName:
-      en: "arena 12 #2"
-      ru: "арена 12 №2"
+      en: "large #2"
+      ru: "большая №2"
     joiningOpen: true
     minPlayers: 2
     itemCooldownSeconds: 3
+    floor:
+      enabled: true
+      shape: square
+      radius: 20
+      y: 75
+      material: LAVA
 
   arena12_3:
     worldName: "arena12_3"
@@ -221,8 +269,14 @@ arenas:
       - [9.0, 100, -15.59]
       - [15.59, 100, -9.0]
     displayName:
-      en: "arena 12 #3"
-      ru: "арена 12 №3"
+      en: "large #3"
+      ru: "большая №3"
     joiningOpen: true
     minPlayers: 2
     itemCooldownSeconds: 3
+    floor:
+      enabled: true
+      shape: square
+      radius: 20
+      y: 75
+      material: LAVA

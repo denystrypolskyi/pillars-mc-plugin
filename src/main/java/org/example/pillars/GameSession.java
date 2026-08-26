@@ -593,6 +593,12 @@ public class GameSession {
         return arena;
     }
 
+    public double getEliminationY() {
+        return arena.isFloorEnabled()
+                ? arena.getFloorY() - ArenaManager.FLOOR_ELIMINATION_MARGIN
+                : 0.0;
+    }
+
     public GameState getState() {
         return state;
     }

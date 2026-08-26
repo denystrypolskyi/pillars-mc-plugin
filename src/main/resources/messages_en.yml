@@ -1,5 +1,14 @@
 # UI palette: &6 brand, &e action, &f value, &7 body text,
 # &8 separator, &a success, &c error/danger, &b information.
+brand:
+  name: "Pillars"
+  scoreboard-title: "&6&lPILLARS"
+
+arena-sizes:
+  mini: "mini"
+  standard: "standard"
+  large: "large"
+
 plugin:
   command-description: "main game command"
   command-usage: "/<command>"
@@ -295,6 +304,8 @@ messages:
   spectator-joined: "&8› &7now spectating &e{arena}&7. exit: &e/p leave"
   no-spawn-available: "&cthere are no available spawn points in this arena."
   arena-configuration-error: "&cthe arena is configured incorrectly. please contact an administrator."
+  floor-material-invalid: "&chold a block, lava bucket, or water bucket in your main hand."
+  spawn-symmetry-failed: "&ccould not arrange this arena's spawn points symmetrically."
   lobby-world-missing: "&clobby world '{world}' was not found."
 
 rarities:
@@ -433,6 +444,13 @@ menus:
     cooldown-minimum: "&7shortest allowed item cooldown is 1 second."
     item-cooldown: "&eitem cooldown"
     cooldown-increase-lore: "&7increase the time between item deliveries."
+    floor: "&elower platform"
+    floor-lore:
+      - "&7status: {status}"
+      - "&7material: &f{material}"
+      - "&7shape: &f{shape}"
+      - ""
+      - "&eclick to configure!"
     spectate: "&espectate match"
     spectate-lore:
       - "&7available only while a match is running."
@@ -453,6 +471,93 @@ menus:
     info-lore:
       - "&7changes save to config.yml immediately."
       - "&7only runtime-safe arena settings are editable here."
+  arena-floor:
+    title: "&6&lPillars &8| &7platform: &f{arena}"
+    back-lore: "&7return to the arena settings."
+    info-name: "&6&llower platform"
+    info-lore:
+      - "&7players can land here and continue the match."
+      - "&7lava and water are generated in a glass basin."
+    enabled: "&aenabled"
+    disabled: "&7disabled"
+    enable: "&aenable platform"
+    disable: "&cdisable platform"
+    toggle-lore:
+      - "&7toggle generation after an arena reset."
+    material: "&eplatform material"
+    material-lore:
+      - "&7current: &f{material}"
+      - "&7opens the catalog of every available block,"
+      - "&7including water and lava."
+      - ""
+      - "&eclick to choose!"
+    shape: "&eplatform shape"
+    shape-lore:
+      - "&7current: &f{shape}"
+      - "&7click to select the next shape."
+    shapes:
+      square: "square"
+      square_ring: "square ring"
+      islands: "islands"
+    shape-option: "&eshape: &f{shape}"
+    shape-selected-lore:
+      - "&aselected"
+    shape-select-lore:
+      - "&7click to select this shape."
+    radius-decrease: "&cdecrease radius"
+    radius-increase: "&aincrease radius"
+    radius: "&eradius:"
+    y-decrease: "&clower platform"
+    y-increase: "&araise platform"
+    y: "&eheight Y:"
+    adjust-lore:
+      - "&7normal click: change by 1"
+      - "&7shift-click: change by 5"
+    height-adjust-lore:
+      - "&7available range: &f{minimum}–{maximum}"
+      - "&7normal click: change by 1"
+      - "&7shift-click: change by 5"
+    apply-title: "&eapply changes"
+    apply-lore:
+      - "&7rebuilds the arena and platform."
+      - "&7players will be returned to the lobby."
+      - "&7shift-click changes radius or Y by 5."
+      - ""
+      - "&eclick to apply!"
+    confirm-apply: "&c&lconfirm changes"
+    confirm-apply-lore:
+      - "&cthe current match and world changes will be reset."
+      - "&eclick again to continue."
+    apply-in-progress: "&7platform rebuild in progress"
+    apply-in-progress-lore:
+      - "&7wait for the arena reset to finish."
+    symmetrize-spawns: "&earrange spawns symmetrically"
+    symmetrize-spawns-lore:
+      - "&7evenly places all spawn points"
+      - "&7on a square perimeter around the center."
+      - "&7distance to the border will be equal."
+      - "&7height and average inset are preserved."
+      - ""
+      - "&eclick to confirm!"
+    confirm-symmetry: "&c&lconfirm spawn arrangement"
+    confirm-symmetry-lore:
+      - "&cspawn point coordinates will be changed."
+      - "&7the arena will then be reset."
+      - "&eclick again to continue."
+    symmetry-in-progress: "&7applying spawn points"
+  floor-material:
+    title: "&6&lPillars &8| &7platform material"
+    current: "&ecurrent material"
+    current-lore: "&7{material}"
+    material-name: "&f{material}"
+    selected-name: "&a{material}"
+    select-lore:
+      - "&eclick to select."
+    selected-lore:
+      - "&athis material is already selected."
+    previous-page: "&eprevious page"
+    next-page: "&enext page"
+    page: "&7page &f{current}&8/&f{total}"
   item-pool:
     title: "&6&lPillars &8| &7items: &f{rarity}"
     info-name: "&6&l{rarity} pool"

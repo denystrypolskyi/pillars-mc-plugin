@@ -95,6 +95,20 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
                 translations.text("menus.arena-settings.starts-at-lore")
         ), "min:1"));
 
+        inventory.setItem(13, actionItem(
+                arena.isFloorEnabled() ? floorIcon(arena.getFloorMaterial()) : Material.LIGHT_GRAY_CONCRETE,
+                translations.text("menus.arena-settings.floor"),
+                translations.list(
+                        "menus.arena-settings.floor-lore",
+                        "status", translations.text(arena.isFloorEnabled()
+                                ? "menus.arena-floor.enabled"
+                                : "menus.arena-floor.disabled"),
+                        "material", arena.getFloorMaterial().name().toLowerCase().replace('_', ' '),
+                        "shape", translations.text("menus.arena-floor.shapes." + arena.getFloorShape().configValue())
+                ),
+                "floor"
+        ));
+
         inventory.setItem(15, actionItem(
                 Material.REDSTONE,
                 translations.text("menus.arena-settings.cooldown-decrease"),
@@ -153,6 +167,12 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
             item.setItemMeta(meta);
         }
         return item;
+    }
+
+    private Material floorIcon(Material material) {
+        if (material == Material.LAVA) return Material.LAVA_BUCKET;
+        if (material == Material.WATER) return Material.WATER_BUCKET;
+        return material;
     }
 
     private ItemStack displayItem(Material material, String name, String value, String... lore) {
@@ -215,6 +235,11 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
 
         if (action.equals("spectate")) {
             gameSessionManager.spectateSession(clicker, arena);
+            return;
+        }
+
+        if (action.equals("floor")) {
+            new AdminArenaFloorMenu(clicker, arenaManager, gameSessionManager, itemManager, hudManager, arena).open();
             return;
         }
 

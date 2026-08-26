@@ -1,6 +1,8 @@
 package org.example.pillars.entities;
 
 import org.bukkit.Location;
+import org.bukkit.Material;
+import org.example.pillars.enums.FloorShape;
 
 import java.util.List;
 
@@ -12,6 +14,11 @@ public class Arena {
     private int minPlayers;
     private boolean joiningOpen = true;
     private List<Location> spawnPoints;
+    private boolean floorEnabled;
+    private Material floorMaterial = Material.LAVA;
+    private int floorRadius = 8;
+    private int floorY = 75;
+    private FloorShape floorShape = FloorShape.SQUARE;
 
     public String getWorldName() {
         return worldName;
@@ -41,6 +48,26 @@ public class Arena {
         return joiningOpen;
     }
 
+    public boolean isFloorEnabled() {
+        return floorEnabled;
+    }
+
+    public Material getFloorMaterial() {
+        return floorMaterial;
+    }
+
+    public int getFloorRadius() {
+        return floorRadius;
+    }
+
+    public int getFloorY() {
+        return floorY;
+    }
+
+    public FloorShape getFloorShape() {
+        return floorShape;
+    }
+
     public void setWorldName(String worldName) {
         this.worldName = worldName;
     }
@@ -67,6 +94,26 @@ public class Arena {
 
     public void setSpawnPoints(List<Location> spawnPoints) {
         this.spawnPoints = spawnPoints;
+    }
+
+    public void setFloorEnabled(boolean floorEnabled) {
+        this.floorEnabled = floorEnabled;
+    }
+
+    public void setFloorMaterial(Material floorMaterial) {
+        this.floorMaterial = floorMaterial;
+    }
+
+    public void setFloorRadius(int floorRadius) {
+        this.floorRadius = floorRadius;
+    }
+
+    public void setFloorY(int floorY) {
+        this.floorY = floorY;
+    }
+
+    public void setFloorShape(FloorShape floorShape) {
+        this.floorShape = floorShape;
     }
 
     public Location getCenter() {

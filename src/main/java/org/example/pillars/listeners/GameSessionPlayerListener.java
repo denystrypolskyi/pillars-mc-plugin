@@ -53,7 +53,8 @@ public class GameSessionPlayerListener implements Listener {
         if (session == null) return;
         if (session.getState() != GameState.RUNNING) return;
 
-        double finalHealth = player.getHealth() - event.getFinalDamage();
+        double effectiveHealth = player.getHealth() + player.getAbsorptionAmount();
+        double finalHealth = effectiveHealth - event.getFinalDamage();
 
         if (finalHealth <= 0) {
 
@@ -115,7 +116,7 @@ public class GameSessionPlayerListener implements Listener {
         if (session == null) return;
 
         if (session.getState() == GameState.RUNNING &&
-                player.getLocation().getY() < 0) {
+                player.getLocation().getY() < session.getEliminationY()) {
 
             Player killer = null;
 
