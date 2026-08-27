@@ -74,16 +74,7 @@ public final class TranslationManager {
     }
 
     public String text(String key, Object... placeholders) {
-        String value = selected.getString(key);
-        if (value == null) {
-            value = defaultSelected.getString(key);
-        }
-        if (value == null) {
-            value = english.getString(key);
-        }
-        if (value == null) {
-            value = defaultEnglish.getString(key);
-        }
+        String value = resolveString(key);
         if (value == null) {
             reportMissingKey(key);
             return key;
@@ -165,10 +156,12 @@ public final class TranslationManager {
         }
 
         if (key.equals("scoreboard.title")) {
-            return UiPalette.TITLE + "CHRONICLE";
+            String scoreboardTitle = resolveString("brand.scoreboard-title");
+            return scoreboardTitle == null ? UiPalette.TITLE + "CHRONICLE" : scoreboardTitle;
         }
 
-        String brandName = "Chronicle";
+        String configuredBrandName = resolveString("brand.name");
+        String brandName = configuredBrandName == null ? "Chronicle" : configuredBrandName;
         String styled = value
                 .replaceAll("(?i)^\\s*&6&lpillars &8»\\s*", "")
                 .replaceAll("(?i)/pillars\\b", "/p")
@@ -186,9 +179,29 @@ public final class TranslationManager {
             return value;
         }
 
-        return firstLine
-                ? UiPalette.TITLE + "Chronicle " + UiPalette.SEPARATOR + "» §r" + value
-                : "&8  ↳ &r" + value;
+        String formatKey = firstLine
+                ? "brand.message-format"
+                : "brand.message-continuation-format";
+        String template = resolveString(formatKey);
+        if (template == null) {
+            template = firstLine
+                    ? "&6&l{name} &8» &r{message}"
+                    : "&8  ↳ &r{message}";
+        }
+
+        String configuredBrandName = resolveString("brand.name");
+        String brandName = configuredBrandName == null ? "Chronicle" : configuredBrandName;
+        return template
+                .replace("{name}", brandName)
+                .replace("{message}", value);
+    }
+
+    private String resolveString(String key) {
+        String value = selected.getString(key);
+        if (value == null) value = defaultSelected.getString(key);
+        if (value == null) value = english.getString(key);
+        if (value == null) value = defaultEnglish.getString(key);
+        return value;
     }
 
     private void saveLanguageFile(String languageCode) {

@@ -3,6 +3,10 @@
 brand:
   name: "Chronicle"
   scoreboard-title: "&6&lCHRONICLE"
+  # {name} is the value above; {message} is the message text.
+  # Use only "{message}" to disable formatting for a line.
+  message-format: "&6&l{name} &8» &r{message}"
+  message-continuation-format: "&8  ↳ &r{message}"
 
 arena-sizes:
   mini: "mini"
@@ -386,6 +390,20 @@ arena-view:
   starts-at-capacity: "&7starts at: &f{minimum}&7/&f{maximum} {players}"
   size: "&7size: &f{maximum} {players}"
   item-cooldown: "&7item cooldown: &f{seconds}s"
+  platform: "&7lower platform: {value}"
+  platform-material: "&8  material: &f{value}"
+  platform-shape: "&8  shape: &f{value}"
+  game-mode: "&7arena mode: &f{value}"
+  item-delivery-mode: "&7item delivery: &f{value}"
+  platform-state:
+    enabled: "&aenabled"
+    disabled: "&7disabled"
+  game-modes:
+    standard: "standard"
+    lucky_blocks: "lucky blocks"
+  item-delivery-modes:
+    single: "single item"
+    hotbar: "full hotbar"
   admin-lock: "&8joining was closed by an admin."
   edit-action: "&eclick to configure this arena"
   state:

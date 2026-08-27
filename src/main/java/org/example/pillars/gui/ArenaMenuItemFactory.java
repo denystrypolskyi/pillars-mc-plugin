@@ -89,7 +89,7 @@ final class ArenaMenuItemFactory {
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
             meta.setDisplayName(view.itemColor() + UiPalette.BOLD + arena.getDisplayName());
-            meta.setLore(List.of(
+            List<String> lore = new ArrayList<>(List.of(
                     translations.text(
                             "arena-view.capacity",
                             "maximum", view.maxPlayers(),
@@ -112,8 +112,41 @@ final class ArenaMenuItemFactory {
                             "players", translations.plural("units.player-at", arena.getMinPlayers())
                     ),
                     "",
-                    view.playerActionLore(translations)
+                    translations.text(
+                            "arena-view.platform",
+                            "value", translations.text("arena-view.platform-state."
+                                    + (arena.isFloorEnabled() ? "enabled" : "disabled"))
+                    )
             ));
+            if (arena.isFloorEnabled()) {
+                lore.add(translations.text(
+                        "arena-view.platform-material",
+                        "value", translations.displayName(arena.getFloorMaterial().name())
+                ));
+                lore.add(translations.text(
+                        "arena-view.platform-shape",
+                        "value", translations.text(
+                                "menus.arena-floor.shapes." + arena.getFloorShape().configValue()
+                        )
+                ));
+            }
+            lore.add(translations.text(
+                    "arena-view.game-mode",
+                    "value", translations.text(
+                            "arena-view.game-modes." + arena.getGameMode().configValue()
+                    )
+            ));
+            lore.add(translations.text(
+                    "arena-view.item-delivery-mode",
+                    "value", translations.text(
+                            "arena-view.item-delivery-modes."
+                                    + arena.getItemDeliveryMode().configValue()
+                    )
+            ));
+            lore.add("");
+            lore.add(view.playerActionLore(translations));
+
+            meta.setLore(lore);
             meta.getPersistentDataContainer().set(arenaKey, PersistentDataType.STRING, arena.getWorldName());
             item.setItemMeta(meta);
         }

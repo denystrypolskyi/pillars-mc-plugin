@@ -3,6 +3,10 @@
 brand:
   name: "Chronicle"
   scoreboard-title: "&6&lCHRONICLE"
+  # {name} — значение выше, {message} — текст сообщения.
+  # Оставьте только "{message}", чтобы отключить оформление строки.
+  message-format: "&6&l{name} &8» &r{message}"
+  message-continuation-format: "&8  ↳ &r{message}"
 
 arena-sizes:
   mini: "мини"
@@ -386,6 +390,20 @@ arena-view:
   starts-at-capacity: "&7запуск при: &f{minimum}&7/&f{maximum} {players}"
   size: "&7вместимость: &f{maximum} {players}"
   item-cooldown: "&7выдача предметов: &f{seconds}с"
+  platform: "&7нижняя платформа: {value}"
+  platform-material: "&8  материал: &f{value}"
+  platform-shape: "&8  форма: &f{value}"
+  game-mode: "&7режим арены: &f{value}"
+  item-delivery-mode: "&7выдача предметов: &f{value}"
+  platform-state:
+    enabled: "&aвключена"
+    disabled: "&7выключена"
+  game-modes:
+    standard: "обычный"
+    lucky_blocks: "лаки-блоки"
+  item-delivery-modes:
+    single: "один предмет"
+    hotbar: "полный хотбар"
   admin-lock: "&8вход на арену закрыт администратором."
   edit-action: "&eнажмите, чтобы настроить арену"
   state:
