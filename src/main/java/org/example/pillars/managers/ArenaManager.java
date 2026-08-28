@@ -7,13 +7,13 @@ import org.bukkit.configuration.file.YamlConfiguration;
 import org.example.pillars.PillarsPlugin;
 import org.example.pillars.entities.Arena;
 import org.example.pillars.enums.ArenaGameMode;
+import org.example.pillars.enums.ArenaRebuildResult;
 import org.example.pillars.enums.FloorShape;
 import org.example.pillars.enums.ItemDeliveryMode;
 
 import java.io.File;
-import java.io.IOException;
-import java.nio.file.*;
 import java.util.*;
+import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -21,21 +21,35 @@ public class ArenaManager {
     public static final int MIN_PLAYERS_TO_START = 2;
     public static final int MIN_BORDER_SHRINK_SECONDS = 60;
     public static final int MAX_BORDER_SHRINK_SECONDS = 1200;
-    public static final int MIN_FLOOR_DISTANCE_BELOW_SPAWNS = 12;
-    public static final int MAX_FLOOR_DISTANCE_BELOW_SPAWNS = 70;
-    public static final int FLOOR_ELIMINATION_MARGIN = 8;
     private static final Pattern LEGACY_DEFAULT_ARENA_NAME = Pattern.compile("^(4|8|12) (?:#|№)(\\d+)$");
 
     private final PillarsPlugin plugin;
     private final TranslationManager translations;
+    private final ArenaFloorService floorService;
+    private final ArenaWorldService worldService;
     private final Map<String, Arena> arenas = new HashMap<>();
+    private final Map<String, ArenaRebuildDraft> rebuildDrafts = new HashMap<>();
 
-    private final File worldContainer = Bukkit.getWorldContainer();
-    private final File templateWorld = new File(worldContainer, "arena_template");
+    private record ArenaRebuildDraft(
+            boolean floorEnabled,
+            Material floorMaterial,
+            FloorShape floorShape,
+            int floorRadius,
+            int floorY,
+            List<Location> spawnPoints
+    ) {
+    }
 
-    public ArenaManager(PillarsPlugin plugin, TranslationManager translations) {
+    public ArenaManager(
+            PillarsPlugin plugin,
+            TranslationManager translations,
+            ArenaFloorService floorService,
+            ArenaWorldService worldService
+    ) {
         this.plugin = plugin;
         this.translations = translations;
+        this.floorService = floorService;
+        this.worldService = worldService;
         removeLegacyGlobalBorderShrinkSetting();
         loadArenas();
     }
@@ -69,6 +83,7 @@ public class ArenaManager {
 
     public void loadArenas() {
         arenas.clear();
+        rebuildDrafts.clear();
 
         File configFile = new File(plugin.getDataFolder(), "config.yml");
         if (!configFile.exists()) {
@@ -76,10 +91,10 @@ public class ArenaManager {
             return;
         }
 
-        if (!templateWorld.exists() || !templateWorld.isDirectory()) {
+        if (!worldService.isTemplateAvailable()) {
             plugin.getLogger().severe(translations.text(
                     "logs.template-world-missing",
-                    "path", templateWorld.getAbsolutePath()
+                    "path", worldService.getTemplatePath()
             ));
             return;
         }
@@ -88,6 +103,16 @@ public class ArenaManager {
         ConfigurationSection section = config.getConfigurationSection("arenas");
         if (section == null) return;
 
+        Map<String, Integer> worldNameCounts = new HashMap<>();
+        for (String key : section.getKeys(false)) {
+            ConfigurationSection arenaSection = section.getConfigurationSection(key);
+            if (arenaSection == null) continue;
+            String configuredWorldName = arenaSection.getString("worldName");
+            if (configuredWorldName == null || configuredWorldName.isEmpty()) continue;
+            worldNameCounts.merge(configuredWorldName.toLowerCase(Locale.ROOT), 1, Integer::sum);
+        }
+        Set<String> loggedDuplicateWorldNames = new HashSet<>();
+
         for (String key : section.getKeys(false)) {
             ConfigurationSection sec = section.getConfigurationSection(key);
             if (sec == null) continue;
@@ -95,43 +120,19 @@ public class ArenaManager {
             String worldName = sec.getString("worldName");
             if (worldName == null || worldName.isEmpty()) continue;
 
-            File arenaFolder = new File(worldContainer, worldName);
-
-            if (!arenaFolder.exists()) {
-                try {
-                    copyFolder(templateWorld.toPath(), arenaFolder.toPath());
-
-                    new File(arenaFolder, "uid.dat").delete();
-                    new File(arenaFolder, "session.lock").delete();
-
-                    plugin.getLogger().info(translations.text("logs.arena-world-created", "world", worldName));
-                } catch (IOException | RuntimeException e) {
+            String normalizedWorldName = worldName.toLowerCase(Locale.ROOT);
+            if (worldNameCounts.getOrDefault(normalizedWorldName, 0) > 1) {
+                if (loggedDuplicateWorldNames.add(normalizedWorldName)) {
                     plugin.getLogger().severe(translations.text(
-                            "logs.arena-template-copy-failed",
-                            "world", worldName,
-                            "error", e.getMessage()
+                            "logs.arena-duplicate-world",
+                            "world", worldName
                     ));
-                    continue;
                 }
-            }
-
-            World world = Bukkit.getWorld(worldName);
-            if (world == null) {
-                WorldCreator creator = new WorldCreator(worldName);
-                creator.generateStructures(false);
-                world = creator.createWorld();
-            }
-
-            if (world == null) {
-                plugin.getLogger().severe(translations.text("logs.world-load-failed", "world", worldName));
                 continue;
             }
 
-            world.setAutoSave(false);
-            world.setGameRule(GameRule.DO_MOB_SPAWNING, false);
-            world.setGameRule(GameRule.DO_DAYLIGHT_CYCLE, false);
-            world.setGameRule(GameRule.ANNOUNCE_ADVANCEMENTS, false);
-            world.setTime(6000);
+            World world = worldService.loadOrCreate(worldName);
+            if (world == null) continue;
 
             Arena arena = new Arena();
             arena.setConfigKey(key);
@@ -176,130 +177,40 @@ public class ArenaManager {
                     Math.min(MAX_BORDER_SHRINK_SECONDS,
                             sec.getInt("borderShrinkSeconds", defaultBorderShrinkSeconds))
             ));
-            loadFloorSettings(arena, sec);
+            floorService.loadSettings(arena, sec);
             int defaultMinPlayers = Math.max(MIN_PLAYERS_TO_START, (int) Math.ceil(spawns.size() / 2.0));
             arena.setMinPlayers(Math.max(
                     MIN_PLAYERS_TO_START,
                     Math.min(spawns.size(), sec.getInt("minPlayers", defaultMinPlayers))
             ));
             arenas.put(worldName, arena);
-            generateArenaFloor(arena);
+            floorService.generate(arena);
         }
 
         plugin.getLogger().info(translations.text("logs.arenas-loaded", "count", arenas.size()));
     }
 
-    public void resetArena(Arena arena, Runnable callback) {
-        String worldName = arena.getWorldName();
-        World world = Bukkit.getWorld(worldName);
-
-        if (!templateWorld.exists() || !templateWorld.isDirectory()) {
-            plugin.getLogger().severe(translations.text(
-                    "logs.arena-reset-template-missing",
-                    "world", worldName,
-                    "path", templateWorld.getAbsolutePath()
-            ));
-            runResetCallback(callback);
+    public void resetArena(Arena arena, Consumer<ArenaRebuildResult> callback) {
+        ArenaRebuildDraft draft = rebuildDrafts.get(arena.getWorldName());
+        if (draft == null) {
+            worldService.rebuild(arena, callback);
             return;
         }
 
-        if (world != null) {
-            Bukkit.unloadWorld(world, false);
-        }
-
-        File arenaFolder = new File(worldContainer, worldName);
-
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            try {
-                if (arenaFolder.exists()) {
-                    deleteFolder(arenaFolder.toPath());
-                }
-
-                copyFolder(templateWorld.toPath(), arenaFolder.toPath());
-
-                new File(arenaFolder, "uid.dat").delete();
-                new File(arenaFolder, "session.lock").delete();
-
-            } catch (IOException | RuntimeException e) {
-                plugin.getLogger().severe(translations.text(
-                        "logs.arena-reset-failed",
-                        "world", worldName,
-                        "error", e.getMessage()
-                ));
-                runResetCallback(callback);
-                return;
+        ArenaRebuildDraft previousLiveSettings = snapshot(arena);
+        applyDraft(arena, draft);
+        worldService.rebuild(arena, result -> {
+            if (result == ArenaRebuildResult.SUCCESS) {
+                persistRebuildSettings(arena, draft);
+                rebuildDrafts.remove(arena.getWorldName(), draft);
+            } else {
+                applyDraft(arena, previousLiveSettings);
             }
 
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                WorldCreator creator = new WorldCreator(worldName);
-                creator.generateStructures(false);
-                World newWorld = creator.createWorld();
-
-                if (newWorld != null) {
-                    newWorld.setAutoSave(false);
-                    newWorld.setGameRule(GameRule.DO_MOB_SPAWNING, false);
-                    newWorld.setGameRule(GameRule.DO_DAYLIGHT_CYCLE, false);
-                    newWorld.setGameRule(GameRule.ANNOUNCE_ADVANCEMENTS, false);
-                    newWorld.setTime(6000);
-
-                    List<Location> newSpawns = new ArrayList<>();
-                    for (Location loc : arena.getSpawnPoints()) {
-                        newSpawns.add(new Location(newWorld, loc.getX(), loc.getY(), loc.getZ()));
-                    }
-                    arena.setSpawnPoints(newSpawns);
-                    generateArenaFloor(arena);
-
-                    arenas.put(worldName, arena);
-
-                    plugin.getLogger().info(translations.text("logs.arena-reset-completed", "world", worldName));
-
-                    if (callback != null) {
-                        callback.run();
-                    }
-                } else {
-                    plugin.getLogger().severe(translations.text("logs.world-load-failed", "world", worldName));
-                    if (callback != null) {
-                        callback.run();
-                    }
-                }
-            });
+            if (callback != null) {
+                callback.accept(result);
+            }
         });
-    }
-
-    private void runResetCallback(Runnable callback) {
-        if (callback != null) {
-            Bukkit.getScheduler().runTask(plugin, callback);
-        }
-    }
-
-    private void copyFolder(Path source, Path target) throws IOException {
-        try (var paths = Files.walk(source)) {
-            paths.forEach(path -> {
-                try {
-                    Path dest = target.resolve(source.relativize(path));
-                    if (Files.isDirectory(path)) {
-                        Files.createDirectories(dest);
-                    } else {
-                        Files.copy(path, dest, StandardCopyOption.REPLACE_EXISTING);
-                    }
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-            });
-        }
-    }
-
-    private void deleteFolder(Path path) throws IOException {
-        try (var paths = Files.walk(path)) {
-            paths.sorted(Comparator.reverseOrder())
-                    .forEach(p -> {
-                        try {
-                            Files.delete(p);
-                        } catch (IOException e) {
-                            throw new RuntimeException(e);
-                        }
-                    });
-        }
     }
 
     public Collection<Arena> getArenas() {
@@ -419,15 +330,9 @@ public class ArenaManager {
             int radius,
             int y
     ) {
-        if (arena == null || !isFloorMaterial(material)) {
+        if (arena == null || !floorService.isFloorMaterial(material)) {
             return;
         }
-
-        arena.setFloorEnabled(enabled);
-        arena.setFloorMaterial(material);
-        arena.setFloorShape(shape == null ? FloorShape.SQUARE : shape);
-        arena.setFloorRadius(Math.max(2, Math.min(64, radius)));
-        arena.setFloorY(Math.max(getMinimumFloorY(arena), Math.min(getMaximumFloorY(arena), y)));
 
         String configKey = getConfigKey(arena);
         if (configKey == null) {
@@ -438,156 +343,69 @@ public class ArenaManager {
             return;
         }
 
-        String path = "arenas." + configKey + ".floor.";
-        plugin.getConfig().set(path + "enabled", arena.isFloorEnabled());
-        plugin.getConfig().set(path + "shape", arena.getFloorShape().configValue());
-        plugin.getConfig().set(path + "radius", arena.getFloorRadius());
-        plugin.getConfig().set(path + "y", arena.getFloorY());
-        plugin.getConfig().set(path + "material", arena.getFloorMaterial().name());
-        plugin.saveConfig();
+        ArenaRebuildDraft current = getDraft(arena);
+        ArenaRebuildDraft updated = new ArenaRebuildDraft(
+                enabled,
+                material,
+                shape == null ? FloorShape.SQUARE : shape,
+                Math.max(2, Math.min(64, radius)),
+                Math.max(getMinimumFloorY(arena), Math.min(getMaximumFloorY(arena), y)),
+                current.spawnPoints()
+        );
+        rebuildDrafts.put(arena.getWorldName(), updated);
     }
 
-    private void loadFloorSettings(Arena arena, ConfigurationSection section) {
-        int defaultRadius = switch (arena.getSpawnPoints().size()) {
-            case 4 -> 8;
-            case 8 -> 16;
-            default -> 20;
-        };
-        int defaultY = (int) Math.floor(arena.getSpawnPoints().stream()
-                .mapToDouble(Location::getY)
-                .min()
-                .orElse(100.0)) - 25;
-        Material material = Material.matchMaterial(section.getString("floor.material", "LAVA"));
-        if (!isFloorMaterial(material)) {
-            material = Material.LAVA;
-        }
+    public boolean isArenaFloorEnabled(Arena arena) {
+        return getDraft(arena).floorEnabled();
+    }
 
-        arena.setFloorEnabled(section.getBoolean("floor.enabled", true));
-        arena.setFloorMaterial(material);
-        arena.setFloorShape(FloorShape.fromConfig(section.getString("floor.shape", "square")));
-        arena.setFloorRadius(Math.max(2, Math.min(64, section.getInt("floor.radius", defaultRadius))));
+    public Material getArenaFloorMaterial(Arena arena) {
+        return getDraft(arena).floorMaterial();
+    }
 
-        arena.setFloorY(Math.max(
-                getMinimumFloorY(arena),
-                Math.min(getMaximumFloorY(arena), section.getInt("floor.y", defaultY))
-        ));
+    public FloorShape getArenaFloorShape(Arena arena) {
+        return getDraft(arena).floorShape();
+    }
+
+    public int getArenaFloorRadius(Arena arena) {
+        return getDraft(arena).floorRadius();
+    }
+
+    public int getArenaFloorY(Arena arena) {
+        return getDraft(arena).floorY();
     }
 
     public int getMinimumFloorY(Arena arena) {
-        World world = arena.getSpawnPoints().get(0).getWorld();
-        int worldMinimum = world == null ? 0 : world.getMinHeight() + FLOOR_ELIMINATION_MARGIN + 1;
-        int spawnMinimum = minimumSpawnY(arena);
-        return Math.max(worldMinimum, spawnMinimum - MAX_FLOOR_DISTANCE_BELOW_SPAWNS);
+        return floorService.getMinimumY(arena);
     }
 
     public int getMaximumFloorY(Arena arena) {
-        World world = arena.getSpawnPoints().get(0).getWorld();
-        int worldMaximum = world == null ? 319 : world.getMaxHeight() - 2;
-        return Math.max(getMinimumFloorY(arena), Math.min(
-                worldMaximum,
-                minimumSpawnY(arena) - MIN_FLOOR_DISTANCE_BELOW_SPAWNS
-        ));
-    }
-
-    private int minimumSpawnY(Arena arena) {
-        return (int) Math.floor(arena.getSpawnPoints().stream()
-                .mapToDouble(Location::getY)
-                .min()
-                .orElse(100.0));
-    }
-
-    private void generateArenaFloor(Arena arena) {
-        if (!arena.isFloorEnabled() || arena.getSpawnPoints().isEmpty()) return;
-
-        Location center = arena.getCenter();
-        World world = center.getWorld();
-        if (world == null) return;
-
-        int y = arena.getFloorY();
-        Material material = arena.getFloorMaterial();
-        boolean basin = material == Material.LAVA || material == Material.WATER;
-        Set<Long> blocks = floorBlocks(arena, center.getBlockX(), center.getBlockZ());
-
-        for (long packed : blocks) {
-            int x = (int) (packed >> 32);
-            int z = (int) packed;
-            if (!basin) {
-                world.getBlockAt(x, y, z).setType(material, false);
-                continue;
-            }
-
-            world.getBlockAt(x, y - 1, z).setType(Material.GLASS, false);
-            world.getBlockAt(x, y, z).setType(isFloorEdge(blocks, x, z) ? Material.GLASS : material, false);
-        }
-    }
-
-    private Set<Long> floorBlocks(Arena arena, int centerX, int centerZ) {
-        Set<Long> blocks = new HashSet<>();
-        int radius = arena.getFloorRadius();
-
-        if (arena.getFloorShape() == FloorShape.ISLANDS) {
-            int islandRadius = Math.max(2, radius / 5);
-            for (Location spawn : arena.getSpawnPoints()) {
-                addSquare(blocks, spawn.getBlockX(), spawn.getBlockZ(), islandRadius, 0);
-            }
-            return blocks;
-        }
-
-        int innerRadius = arena.getFloorShape() == FloorShape.SQUARE_RING ? Math.max(1, radius / 2) : 0;
-        addSquare(blocks, centerX, centerZ, radius, innerRadius);
-        return blocks;
-    }
-
-    private void addSquare(Set<Long> blocks, int centerX, int centerZ, int radius, int innerRadius) {
-        for (int dx = -radius; dx <= radius; dx++) {
-            for (int dz = -radius; dz <= radius; dz++) {
-                int distance = Math.max(Math.abs(dx), Math.abs(dz));
-                if (distance <= radius && distance >= innerRadius) {
-                    blocks.add(pack(centerX + dx, centerZ + dz));
-                }
-            }
-        }
-    }
-
-    private long pack(int x, int z) {
-        return ((long) x << 32) ^ (z & 0xffffffffL);
-    }
-
-    private boolean isFloorEdge(Set<Long> blocks, int x, int z) {
-        int[][] neighbors = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {1, -1}, {-1, 1}};
-        for (int[] offset : neighbors) {
-            if (!blocks.contains(pack(x + offset[0], z + offset[1]))) return true;
-        }
-        return false;
-    }
-
-    private boolean isFloorMaterial(Material material) {
-        return material != null
-                && material.isBlock()
-                && !material.isAir()
-                && ((material.isItem() && material.isSolid())
-                || material == Material.LAVA
-                || material == Material.WATER);
+        return floorService.getMaximumY(arena);
     }
 
     public boolean symmetrizeArenaSpawns(Arena arena) {
         if (arena == null || arena.getSpawnPoints() == null || arena.getSpawnPoints().size() < 2) return false;
 
-        Location center = arena.getCenter();
+        String configKey = getConfigKey(arena);
+        if (configKey == null) return false;
+
+        ArenaRebuildDraft current = getDraft(arena);
+        List<Location> currentSpawns = current.spawnPoints();
+
+        Location center = centerOf(currentSpawns);
         World world = center.getWorld();
         if (world == null) return false;
 
-        double radius = arena.getSpawnPoints().stream()
+        double radius = currentSpawns.stream()
                 .mapToDouble(spawn -> Math.max(
                         Math.abs(spawn.getX() - center.getX()),
                         Math.abs(spawn.getZ() - center.getZ())
                 ))
                 .average()
                 .orElse(1.0);
-        double y = arena.getSpawnPoints().stream().mapToDouble(Location::getY).average().orElse(center.getY());
-        int count = arena.getSpawnPoints().size();
+        double y = currentSpawns.stream().mapToDouble(Location::getY).average().orElse(center.getY());
+        int count = currentSpawns.size();
         List<Location> symmetricSpawns = new ArrayList<>(count);
-        List<List<Double>> serializedSpawns = new ArrayList<>(count);
 
         for (int i = 0; i < count; i++) {
             double perimeterPosition = 8.0 * radius * i / count;
@@ -595,15 +413,81 @@ public class ArenaManager {
             double x = roundCoordinate(center.getX() + offset[0]);
             double z = roundCoordinate(center.getZ() + offset[1]);
             symmetricSpawns.add(new Location(world, x, y, z));
-            serializedSpawns.add(List.of(x, roundCoordinate(y), z));
         }
 
-        arena.setSpawnPoints(symmetricSpawns);
+        rebuildDrafts.put(arena.getWorldName(), new ArenaRebuildDraft(
+                current.floorEnabled(),
+                current.floorMaterial(),
+                current.floorShape(),
+                current.floorRadius(),
+                current.floorY(),
+                List.copyOf(symmetricSpawns)
+        ));
+        return true;
+    }
+
+    private ArenaRebuildDraft getDraft(Arena arena) {
+        return rebuildDrafts.getOrDefault(arena.getWorldName(), snapshot(arena));
+    }
+
+    private ArenaRebuildDraft snapshot(Arena arena) {
+        return new ArenaRebuildDraft(
+                arena.isFloorEnabled(),
+                arena.getFloorMaterial(),
+                arena.getFloorShape(),
+                arena.getFloorRadius(),
+                arena.getFloorY(),
+                copyLocations(arena.getSpawnPoints())
+        );
+    }
+
+    private void applyDraft(Arena arena, ArenaRebuildDraft draft) {
+        arena.setFloorEnabled(draft.floorEnabled());
+        arena.setFloorMaterial(draft.floorMaterial());
+        arena.setFloorShape(draft.floorShape());
+        arena.setFloorRadius(draft.floorRadius());
+        arena.setFloorY(draft.floorY());
+        arena.setSpawnPoints(copyLocations(draft.spawnPoints()));
+    }
+
+    private void persistRebuildSettings(Arena arena, ArenaRebuildDraft draft) {
         String configKey = getConfigKey(arena);
-        if (configKey == null) return false;
+        if (configKey == null) return;
+
+        String floorPath = "arenas." + configKey + ".floor.";
+        plugin.getConfig().set(floorPath + "enabled", draft.floorEnabled());
+        plugin.getConfig().set(floorPath + "shape", draft.floorShape().configValue());
+        plugin.getConfig().set(floorPath + "radius", draft.floorRadius());
+        plugin.getConfig().set(floorPath + "y", draft.floorY());
+        plugin.getConfig().set(floorPath + "material", draft.floorMaterial().name());
+
+        List<List<Double>> serializedSpawns = draft.spawnPoints().stream()
+                .map(location -> List.of(
+                        roundCoordinate(location.getX()),
+                        roundCoordinate(location.getY()),
+                        roundCoordinate(location.getZ())
+                ))
+                .toList();
         plugin.getConfig().set("arenas." + configKey + ".spawnPoints", serializedSpawns);
         plugin.saveConfig();
-        return true;
+    }
+
+    private List<Location> copyLocations(List<Location> locations) {
+        return locations.stream().map(Location::clone).toList();
+    }
+
+    private Location centerOf(List<Location> locations) {
+        double x = 0;
+        double y = 0;
+        double z = 0;
+        for (Location location : locations) {
+            x += location.getX();
+            y += location.getY();
+            z += location.getZ();
+        }
+
+        Location base = locations.getFirst();
+        return new Location(base.getWorld(), x / locations.size(), y / locations.size(), z / locations.size());
     }
 
     private double[] squarePerimeterOffset(double position, double radius) {
@@ -645,10 +529,7 @@ public class ArenaManager {
     }
 
     private String getLocalizedDisplayName(ConfigurationSection section, String worldName) {
-        String localizedName = section.getString("displayName." + translations.getLanguage());
-        if (localizedName == null || localizedName.isBlank()) {
-            localizedName = section.getString("displayName.en");
-        }
+        String localizedName = section.getString("displayName.ru");
         if (localizedName == null || localizedName.isBlank()) {
             localizedName = section.getString("displayName", worldName);
         }
@@ -668,8 +549,7 @@ public class ArenaManager {
             case "12" -> "large";
             default -> throw new IllegalStateException("Unexpected default arena size");
         };
-        String numberSign = translations.getLanguage().equals("ru") ? "№" : "#";
-        return translations.text("arena-sizes." + sizeKey) + " " + numberSign + legacyName.group(2);
+        return translations.text("arena-sizes." + sizeKey) + " №" + legacyName.group(2);
     }
 
 }

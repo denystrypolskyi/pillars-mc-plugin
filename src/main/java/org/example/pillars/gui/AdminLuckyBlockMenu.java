@@ -59,7 +59,7 @@ public final class AdminLuckyBlockMenu implements InventoryHolder {
                 "back"
         ));
         inventory.setItem(4, displayItem(
-                Material.YELLOW_GLAZED_TERRACOTTA,
+                Material.SPONGE,
                 translations.text("menus.lucky-blocks.info-name"),
                 translations.list("menus.lucky-blocks.info-lore")
         ));

@@ -5,13 +5,13 @@ api-version: 1.21
 softdepend: [PlaceholderAPI, TAB]
 commands:
   pillars:
-    description: main game command
+    description: основная игровая команда
     usage: /<command>
     aliases: [p]
 permissions:
   pillars.forcestart:
-    description: allows force starting games
+    description: разрешает принудительно запускать игры
     default: op
   pillars.admin:
-    description: allows editing gameplay configuration in-game
+    description: разрешает изменять игровые настройки
     default: op

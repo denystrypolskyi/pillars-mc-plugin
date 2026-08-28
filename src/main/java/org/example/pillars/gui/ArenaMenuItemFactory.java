@@ -242,7 +242,7 @@ final class ArenaMenuItemFactory {
         String stateDisplay(TranslationManager translations) {
             String stateKey = switch (state) {
                 case WAITING -> "waiting";
-                case STARTING, COUNTDOWN -> "starting";
+                case STARTING -> "starting";
                 case RUNNING -> "running";
                 case ENDING -> "ending";
                 case RESETTING -> "resetting";
@@ -253,7 +253,7 @@ final class ArenaMenuItemFactory {
         String stateColor() {
             return switch (state) {
                 case WAITING -> UiPalette.SUCCESS;
-                case STARTING, COUNTDOWN -> UiPalette.PRIMARY;
+                case STARTING -> UiPalette.PRIMARY;
                 case RUNNING -> UiPalette.DANGER;
                 case ENDING, RESETTING -> UiPalette.MUTED;
             };
@@ -308,7 +308,7 @@ final class ArenaMenuItemFactory {
                 return Material.BARRIER;
             }
 
-            if (state == GameState.STARTING || state == GameState.COUNTDOWN) {
+            if (state == GameState.STARTING) {
                 return Material.YELLOW_DYE;
             }
 
@@ -317,7 +317,7 @@ final class ArenaMenuItemFactory {
 
         String itemColor() {
             if (joinable) {
-                return state == GameState.STARTING || state == GameState.COUNTDOWN
+                return state == GameState.STARTING
                         ? UiPalette.PRIMARY
                         : UiPalette.SUCCESS;
             }

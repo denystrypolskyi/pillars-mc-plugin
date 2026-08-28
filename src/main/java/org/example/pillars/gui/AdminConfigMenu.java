@@ -85,7 +85,7 @@ public class AdminConfigMenu implements InventoryHolder {
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
             meta.setDisplayName(name);
-            meta.setLore(List.of(translations.text("menus.rarity.update-lore")));
+            meta.setLore(List.of(translations.text("menus.item-settings.back-lore")));
             meta.getPersistentDataContainer().set(ACTION_KEY, PersistentDataType.STRING, action);
             item.setItemMeta(meta);
         }
@@ -126,7 +126,7 @@ public class AdminConfigMenu implements InventoryHolder {
         if (action == null) return;
 
         if (action.equals("back")) {
-            new AdminHubMenu(clicker, itemManager, hudManager, arenaManager, gameSessionManager).open();
+            new AdminItemSettingsMenu(clicker, itemManager, hudManager, arenaManager, gameSessionManager).open();
             return;
         }
 

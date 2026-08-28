@@ -116,11 +116,11 @@ public final class AdminFloorMaterialMenu implements InventoryHolder {
             ));
         }
         inventory.setItem(53, ArenaMenuItemFactory.visualItem(
-                materialIcon(arena.getFloorMaterial()),
+                materialIcon(arenaManager.getArenaFloorMaterial(arena)),
                 translations.text("menus.floor-material.current"),
                 List.of(translations.text(
                         "menus.floor-material.current-lore",
-                        "material", displayMaterial(arena.getFloorMaterial())
+                        "material", displayMaterial(arenaManager.getArenaFloorMaterial(arena))
                 ))
         ));
         int pageCount = Math.max(1, (materials.size() + PAGE_SIZE - 1) / PAGE_SIZE);
@@ -160,11 +160,11 @@ public final class AdminFloorMaterialMenu implements InventoryHolder {
             if (material != null) {
                 arenaManager.updateArenaFloorSettings(
                         arena,
-                        arena.isFloorEnabled(),
+                        arenaManager.isArenaFloorEnabled(arena),
                         material,
-                        arena.getFloorShape(),
-                        arena.getFloorRadius(),
-                        arena.getFloorY()
+                        arenaManager.getArenaFloorShape(arena),
+                        arenaManager.getArenaFloorRadius(arena),
+                        arenaManager.getArenaFloorY(arena)
                 );
                 new AdminArenaFloorMenu(clicker, arenaManager, gameSessionManager, itemManager, hudManager, arena).open();
             }
@@ -209,7 +209,7 @@ public final class AdminFloorMaterialMenu implements InventoryHolder {
         ItemStack item = new ItemStack(materialIcon(material));
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
-            boolean selected = arena.getFloorMaterial() == material;
+            boolean selected = arenaManager.getArenaFloorMaterial(arena) == material;
             meta.setDisplayName(translations.text(
                     selected ? "menus.floor-material.selected-name" : "menus.floor-material.material-name",
                     "material", displayMaterial(material)

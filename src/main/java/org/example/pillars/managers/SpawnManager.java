@@ -86,7 +86,7 @@ public class SpawnManager {
         for (int y = topY; y >= bottomY; y--) {
             org.bukkit.block.Block block = world.getBlockAt(spawn.getBlockX(), y, spawn.getBlockZ());
             if (block.getType() == Material.BEDROCK
-                    || block.getType() == Material.YELLOW_GLAZED_TERRACOTTA) {
+                    || block.getType() == Material.SPONGE) {
                 block.setType(Material.AIR, false);
             }
             blocks.add(block.getLocation());

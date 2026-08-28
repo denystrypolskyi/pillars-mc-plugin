@@ -63,7 +63,7 @@ public class AdminItemPoolMenu implements InventoryHolder {
         inventory.setItem(0, actionItem(
                 Material.ARROW,
                 translations.text("menus.common.back"),
-                List.of(translations.text("menus.common.back-admin-lore")),
+                List.of(translations.text("menus.item-settings.back-lore")),
                 "back"
         ));
         inventory.setItem(4, infoItem());
@@ -197,7 +197,7 @@ public class AdminItemPoolMenu implements InventoryHolder {
         if (action == null) return;
 
         switch (action) {
-            case "back" -> new AdminHubMenu(clicker, itemManager, hudManager, arenaManager, gameSessionManager).open();
+            case "back" -> new AdminItemSettingsMenu(clicker, itemManager, hudManager, arenaManager, gameSessionManager).open();
             case "add_held" -> addHeldItem(clicker);
             case "remove" -> removeItem(clicker, meta);
             default -> {

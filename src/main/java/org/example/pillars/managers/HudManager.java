@@ -1,10 +1,8 @@
 package org.example.pillars.managers;
 
 import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
-import org.bukkit.scoreboard.*;
 import org.example.pillars.entities.Arena;
 import org.example.pillars.enums.ArenaGameMode;
 import org.example.pillars.enums.GameState;
@@ -13,22 +11,12 @@ import org.example.pillars.enums.ItemDeliveryMode;
 import org.example.pillars.gameevents.GameEventStatus;
 import org.example.pillars.gameevents.NextGameEventStatus;
 import org.example.pillars.ui.UiPalette;
-import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
 
 public class HudManager {
     private final TranslationManager translations;
-    private final boolean externalScoreboard;
-    private final Map<UUID, Scoreboard> playerScoreboards = new HashMap<>();
-    private final Map<UUID, Map<String, Team>> playerTeams = new HashMap<>();
-
-    private static final String[] UNIQUE_ENTRIES = {
-            "§0§r", "§1§r", "§2§r", "§3§r", "§4§r", "§5§r", "§6§r", "§7§r",
-            "§8§r", "§9§r", "§a§r", "§b§r", "§c§r", "§d§r", "§e§r", "§f§r"
-    };
-
-    private int blankCounter = 0;
+    private final PlayerScoreboardService scoreboards;
 
     private static final int FADE_IN = 5;
     private static final int FADE_OUT = 5;
@@ -37,169 +25,34 @@ public class HudManager {
     private static final int MEDIUM_STAY = 30;
     private static final int LONG_STAY = 50;
 
-    public HudManager(TranslationManager translations, boolean externalScoreboard) {
+    public HudManager(TranslationManager translations, PlayerScoreboardService scoreboards) {
         this.translations = translations;
-        this.externalScoreboard = externalScoreboard;
+        this.scoreboards = scoreboards;
     }
 
     public TranslationManager getTranslations() {
         return translations;
     }
 
-    private void initializeScoreboard(@NotNull Player player, boolean lobby) {
-        UUID uuid = player.getUniqueId();
-        playerScoreboards.remove(uuid);
-        playerTeams.remove(uuid);
-
-        Scoreboard board = Bukkit.getScoreboardManager().getNewScoreboard();
-        Objective obj = board.registerNewObjective("pillarshud", "dummy", translations.text("scoreboard.title"));
-        obj.setDisplaySlot(DisplaySlot.SIDEBAR);
-
-        Map<String, Team> teams = new LinkedHashMap<>();
-
-        String[] lineKeys = lobby
-                ? new String[]{"infoHeader", "playerLine", "statHeader", "killsLine", "rateLine"}
-                : new String[]{"infoHeader", "playerLine", "onlineLine", "statusLine", "arenaLine"};
-
-        int score = lineKeys.length + 2;
-
-        obj.getScore(nextBlank()).setScore(score--);
-
-        for (String key : lineKeys) {
-            Team team = board.registerNewTeam("hud_" + key);
-            String entry = UNIQUE_ENTRIES[teams.size() % UNIQUE_ENTRIES.length];
-            team.addEntry(entry);
-
-            if (key.equals("statHeader")) {
-                obj.getScore(nextBlank()).setScore(score--);
-            }
-
-            obj.getScore(entry).setScore(score--);
-            teams.put(key, team);
-        }
-
-        obj.getScore(nextBlank()).setScore(score--);
-
-        playerScoreboards.put(uuid, board);
-        playerTeams.put(uuid, teams);
-
-        player.setScoreboard(board);
-    }
-
-    private String nextBlank() {
-        return UNIQUE_ENTRIES[blankCounter++ % UNIQUE_ENTRIES.length] + " ";
-    }
-
     public void updatePlayerScoreboard(Player player, int players, int maxPlayers, GameState state,
                                        String arenaName, int kills, int wins, int gamesPlayed) {
-        if (externalScoreboard) return;
-        initializeScoreboard(player, false);
-
-        UUID uuid = player.getUniqueId();
-        Map<String, Team> teams = playerTeams.get(uuid);
-        if (teams == null || !teams.keySet().containsAll(List.of(
-                "infoHeader", "playerLine", "onlineLine", "statusLine", "arenaLine"
-        ))) return;
-
-        teams.get("infoHeader").setPrefix(isolate(UiPalette.SECTION + scoreboardText("scoreboard.info-header")));
-
-        teams.get("playerLine").setPrefix(isolate(UiPalette.LABEL + scoreboardText("scoreboard.player-label")));
-        teams.get("playerLine").setSuffix(isolate(UiPalette.VALUE + player.getName()));
-
-        teams.get("onlineLine").setPrefix(isolate(UiPalette.LABEL + scoreboardText("scoreboard.online-label")));
-        teams.get("onlineLine").setSuffix(isolate(
-                UiPalette.VALUE + players + UiPalette.SEPARATOR + "/" + UiPalette.VALUE + maxPlayers
-        ));
-
-        teams.get("statusLine").setPrefix(isolate(UiPalette.LABEL + scoreboardText("scoreboard.status-label")));
-        teams.get("statusLine").setSuffix(formatState(state));
-
-        teams.get("arenaLine").setPrefix(isolate(UiPalette.LABEL + scoreboardText("scoreboard.arena-label")));
-        teams.get("arenaLine").setSuffix(isolate(UiPalette.VALUE + arenaName));
-
+        scoreboards.updatePlayer(player, players, maxPlayers, state, arenaName, kills, wins, gamesPlayed);
     }
 
     public void updateLobbyScoreboard(Player player, int kills, int wins, int gamesPlayed) {
-        if (externalScoreboard) return;
-        initializeScoreboard(player, true);
-        Map<String, Team> teams = playerTeams.get(player.getUniqueId());
-        if (teams == null || !teams.keySet().containsAll(List.of(
-                "infoHeader", "playerLine", "statHeader", "killsLine", "rateLine"
-        ))) return;
-        teams.get("infoHeader").setPrefix(isolate(UiPalette.SECTION + scoreboardText("scoreboard.info-header")));
-        teams.get("playerLine").setPrefix(isolate(UiPalette.LABEL + scoreboardText("scoreboard.player-label")));
-        teams.get("playerLine").setSuffix(isolate(UiPalette.VALUE + player.getName()));
-        teams.get("statHeader").setPrefix(isolate(UiPalette.SECTION + scoreboardText("scoreboard.stats-header")));
-        teams.get("killsLine").setPrefix(isolate(UiPalette.LABEL + scoreboardText("scoreboard.kills-label")));
-        teams.get("killsLine").setSuffix(isolate(UiPalette.VALUE + kills));
-        int winRate = gamesPlayed <= 0 ? 0 : (int) Math.round(wins * 100.0 / gamesPlayed);
-        teams.get("rateLine").setPrefix(isolate(UiPalette.LABEL + scoreboardText("scoreboard.rate-label")));
-        teams.get("rateLine").setSuffix(isolate(
-                UiPalette.VALUE + wins
-                        + UiPalette.SEPARATOR + "/"
-                        + UiPalette.TEXT + gamesPlayed
-                        + UiPalette.SEPARATOR + " ("
-                        + UiPalette.ACCENT + winRate + "%"
-                        + UiPalette.SEPARATOR + ")"
-        ));
+        scoreboards.updateLobby(player, kills, wins, gamesPlayed);
     }
 
     public void updateArenaInfoForAllPlayers(Set<UUID> playersSet, int activeCount, int max, GameState state, String arenaName) {
-        if (externalScoreboard) return;
-        for (UUID uuid : playersSet) {
-            Player p = Bukkit.getPlayer(uuid);
-            if (p == null || !p.isOnline()) continue;
-
-            Map<String, Team> teams = playerTeams.get(uuid);
-            if (teams == null) continue;
-
-            Team online = teams.get("onlineLine");
-            if (online != null) {
-                online.setSuffix(isolate(
-                        UiPalette.TEXT + activeCount + UiPalette.SEPARATOR + "/" + UiPalette.TEXT + max
-                ));
-            }
-
-            Team status = teams.get("statusLine");
-            if (status != null) {
-                status.setSuffix(formatState(state));
-            }
-
-            Team arena = teams.get("arenaLine");
-            if (arena != null) {
-                arena.setSuffix(isolate(UiPalette.VALUE + arenaName));
-            }
-        }
+        scoreboards.updateArenaInfo(playersSet, activeCount, max, state, arenaName);
     }
 
     public void updatePlayerStats(Player player, int kills, int wins) {
-        if (externalScoreboard) return;
-        UUID uuid = player.getUniqueId();
-        Map<String, Team> teams = playerTeams.get(uuid);
-        if (teams == null) return;
-
-        Team killsTeam = teams.get("killsLine");
-        if (killsTeam != null) {
-            killsTeam.setSuffix(isolate(UiPalette.VALUE + kills));
-        }
-
-        Team winsTeam = teams.get("winsLine");
-        if (winsTeam != null) {
-            winsTeam.setSuffix(isolate(UiPalette.VALUE + wins));
-        }
-    }
-
-    public void cleanupPlayerScoreboard(Player player) {
-        UUID uuid = player.getUniqueId();
-        playerScoreboards.remove(uuid);
-        playerTeams.remove(uuid);
-        if (!externalScoreboard) {
-            player.setScoreboard(Bukkit.getScoreboardManager().getNewScoreboard());
-        }
+        scoreboards.updateStats(player, kills, wins);
     }
 
     public void resetScoreboard(Player player) {
-        cleanupPlayerScoreboard(player);
+        scoreboards.reset(player);
     }
 
     public void sendReturnToLobbyTitle(Player player, int seconds) {
@@ -518,22 +371,15 @@ public class HudManager {
     }
 
     private String waitingPlayerWord(int amount) {
-        if (translations.getLanguage().equals("ru")) {
-            int lastTwoDigits = Math.abs(amount) % 100;
-            int lastDigit = Math.abs(amount) % 10;
-            if (lastTwoDigits >= 11 && lastTwoDigits <= 14) {
-                return "игроков";
-            }
-            if (lastDigit == 1) {
-                return "игрока";
-            }
-            if (lastDigit >= 2 && lastDigit <= 4) {
-                return "игрока";
-            }
+        int lastTwoDigits = Math.abs(amount) % 100;
+        int lastDigit = Math.abs(amount) % 10;
+        if (lastTwoDigits >= 11 && lastTwoDigits <= 14) {
             return "игроков";
         }
-
-        return amount == 1 ? "player" : "players";
+        if (lastDigit >= 1 && lastDigit <= 4) {
+            return "игрока";
+        }
+        return "игроков";
     }
 
     public void sendSpectatorTitle(Player player) {
@@ -726,6 +572,10 @@ public class HudManager {
         player.sendMessage(translations.text("messages.manual-arena-reset-completed", "arena", arenaName));
     }
 
+    public void sendManualArenaResetFailed(Player player, String arenaName) {
+        player.sendMessage(translations.text("messages.manual-arena-reset-failed", "arena", arenaName));
+    }
+
     public void sendManualArenaResetInProgress(Player player, String arenaName) {
         player.sendMessage(translations.text("messages.manual-arena-reset-in-progress", "arena", arenaName));
     }
@@ -870,26 +720,4 @@ public class HudManager {
         }
     }
 
-    private String formatState(GameState state) {
-        if (state == null) {
-            return isolate(UiPalette.VALUE + scoreboardText("scoreboard.state.unknown"));
-        }
-
-        return switch (state) {
-            case WAITING -> isolate(UiPalette.VALUE + scoreboardText("scoreboard.state.waiting"));
-            case STARTING, COUNTDOWN -> isolate(UiPalette.VALUE + scoreboardText("scoreboard.state.starting"));
-            case RUNNING -> isolate(UiPalette.VALUE + scoreboardText("scoreboard.state.running"));
-            case ENDING -> isolate(UiPalette.VALUE + scoreboardText("scoreboard.state.ending"));
-            case RESETTING -> isolate(UiPalette.VALUE + scoreboardText("scoreboard.state.resetting"));
-        };
-    }
-
-    private String isolate(String value) {
-        return "§r" + value + "§r";
-    }
-
-    private String scoreboardText(String key) {
-        String stripped = ChatColor.stripColor(translations.text(key));
-        return stripped == null ? "" : stripped;
-    }
 }

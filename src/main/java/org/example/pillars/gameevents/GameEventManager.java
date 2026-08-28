@@ -15,6 +15,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
@@ -481,7 +482,8 @@ public final class GameEventManager {
     }
 
     private String normalizeEventId(String eventId) {
-        return switch (eventId.toLowerCase()) {
+        String normalized = eventId.toLowerCase(Locale.ROOT);
+        return switch (normalized) {
             case "smash", "super-smash-bros", "supersmashbros" -> "super_smash_bros";
             case "cosmic", "drift", "cosmic-drift", "cosmicdrift" -> "cosmic_drift";
             case "meteor", "meteors", "meteor-shower", "meteorshower" -> "meteor_shower";
@@ -489,7 +491,7 @@ public final class GameEventManager {
             case "hunt", "hunting", "hunt-begins", "huntbegins" -> "hunt_begins";
             case "potato", "hot-potato", "hotpotato" -> "hot_potato";
             case "lastbreath" -> "last_breath";
-            default -> eventId.toLowerCase();
+            default -> normalized;
         };
     }
 

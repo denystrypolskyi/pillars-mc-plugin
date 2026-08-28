@@ -6,6 +6,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Vector;
 import org.example.pillars.entities.Arena;
+import org.example.pillars.enums.ArenaRebuildResult;
 import org.example.pillars.enums.ArenaResetResult;
 import org.example.pillars.enums.ArenaGameMode;
 import org.example.pillars.enums.GameState;
@@ -17,6 +18,7 @@ import org.example.pillars.gameevents.NextGameEventStatus;
 import org.example.pillars.managers.*;
 
 import java.util.*;
+import java.util.function.Consumer;
 
 public class GameSession {
     private static final long DAMAGE_CREDIT_MILLIS = 10_000L;
@@ -33,22 +35,18 @@ public class GameSession {
     private final Map<UUID, Location> adminSpectatorPreviousLocations = new HashMap<>();
     private final Map<UUID, GameMode> adminSpectatorPreviousGameModes = new HashMap<>();
 
-    private final HudManager hudManager;
-    private final PlayerManager playerManager;
-    private final StatsManager statsManager;
-    private final SpawnManager spawnManager;
-    private final SoundManager soundManager;
-    private final TeleportManager teleportManager;
+    private final SessionPresentationService presentation;
+    private final SessionPlayerService players;
+    private final SessionStatisticsService statistics;
     private final ItemManager itemManager;
     private final ArenaManager arenaManager;
     private final JavaPlugin plugin;
     private final GameEventManager gameEventManager;
+    private final SessionWorldBorderController worldBorderController;
 
     private BukkitTask beginGameCountdownTask;
     private BukkitTask waitingForPlayersTask;
     private BukkitTask itemDistributionTask;
-    private BukkitTask worldBorderShrinkTask;
-    private BukkitTask finalEventStartDelayTask;
     private BukkitTask endGameCountdownStartDelayTask;
     private BukkitTask arenaResetDelayTask;
 
@@ -60,15 +58,11 @@ public class GameSession {
     private boolean forceStart = false;
     private ArenaGameMode activeGameMode;
     private int activeItemIntervalSeconds;
-    private long borderShrinkEndTimeMillis = -1L;
-    private double borderShrinkBlocksPerSecond = 0.0;
 
     private final int beginCountdownSeconds;
     private final int endGameLobbyCountdownSeconds;
     private final long endGameSpectatorDelayTicks;
     private final long arenaResetDelayTicks;
-    private final double borderMinSize;
-    private final double borderSpawnPaddingBlocks;
     private final int spawnPillarHeightBlocks;
     private final String lobbyWorldName;
 
@@ -85,23 +79,25 @@ public class GameSession {
             Arena arena
     ) {
         this.plugin = plugin;
-        this.hudManager = hudManager;
-        this.playerManager = playerManager;
-        this.statsManager = statsManager;
-        this.spawnManager = spawnManager;
-        this.soundManager = soundManager;
-        this.teleportManager = teleportManager;
+        this.presentation = new SessionPresentationService(hudManager, soundManager);
+        this.players = new SessionPlayerService(playerManager, spawnManager, teleportManager);
+        this.statistics = new SessionStatisticsService(statsManager);
         this.itemManager = itemManager;
         this.arenaManager = arenaManager;
         this.arena = arena;
         this.gameEventManager = new GameEventManager(plugin, this, hudManager, soundManager, itemManager);
+        this.worldBorderController = new SessionWorldBorderController(
+                plugin,
+                arena,
+                gameEventManager,
+                Math.max(1.0, plugin.getConfig().getDouble("settings.borderMinSize", 1.0)),
+                Math.max(1.0, plugin.getConfig().getDouble("settings.borderSpawnPaddingBlocks", 10.0))
+        );
 
         this.beginCountdownSeconds = Math.max(1, plugin.getConfig().getInt("settings.beginCountdownSeconds", 5));
         this.endGameLobbyCountdownSeconds = Math.max(1, plugin.getConfig().getInt("settings.endGameLobbyCountdownSeconds", 5));
         this.endGameSpectatorDelayTicks = Math.max(0L, plugin.getConfig().getLong("settings.endGameSpectatorDelayTicks", 40L));
         this.arenaResetDelayTicks = Math.max(1L, plugin.getConfig().getLong("settings.arenaResetDelayTicks", 160L));
-        this.borderMinSize = Math.max(1.0, plugin.getConfig().getDouble("settings.borderMinSize", 1.0));
-        this.borderSpawnPaddingBlocks = Math.max(1.0, plugin.getConfig().getDouble("settings.borderSpawnPaddingBlocks", 10.0));
         this.spawnPillarHeightBlocks = Math.max(1, Math.min(
                 64,
                 plugin.getConfig().getInt("settings.spawnPillarHeightBlocks", 5)
@@ -112,35 +108,32 @@ public class GameSession {
     public void playerJoin(Player player) {
         if (!canJoin()) {
             if (arena.getSpawnPoints() == null || arena.getSpawnPoints().isEmpty()) {
-                hudManager.sendArenaConfigurationError(player);
+                presentation.arenaConfigurationError(player);
             } else if (!arena.isJoiningOpen()) {
-                hudManager.sendArenaClosed(player, arena.getDisplayName());
+                presentation.arenaClosed(player, arena.getDisplayName());
             } else if (activePlayers.size() >= arena.getSpawnPoints().size()) {
-                hudManager.sendNoSpawnAvailable(player);
+                presentation.noSpawnAvailable(player);
             } else {
-                hudManager.sendGameAlreadyStartedTitle(player);
+                presentation.gameAlreadyStarted(player);
             }
             return;
         }
 
-        playerManager.resetPlayerState(player);
+        players.resetForJoin(player);
         if (!teleportToSpawn(player)) {
-            playerManager.resetAndReturnToLobby(player, lobbyWorldName);
+            players.returnToLobby(player, lobbyWorldName);
             return;
         }
         addActivePlayer(player);
         if (state == GameState.WAITING) {
-            playerManager.giveLeaveArenaItem(player);
-            playerManager.giveForceStartItem(player);
-            playerManager.giveAdminMenuItem(player);
-            playerManager.giveCurrentArenaSettingsItem(player, arena.getDisplayName());
+            players.giveWaitingItems(player, arena.getDisplayName());
         }
-        hudManager.broadcastPlayerJoinedArena(player, arena.getDisplayName(), activePlayers.size(), arena.getSpawnPoints().size());
+        presentation.joined(player, arena, activePlayers.size());
 
         updateArenaHudForAllPlayers();
 
-        var stats = statsManager.getStats(player.getUniqueId());
-        hudManager.updatePlayerScoreboard(player, getArenaPlayerCount(), arena.getSpawnPoints().size(), state, arena.getDisplayName(), stats.getKills(), stats.getWins(), stats.getGamesPlayed());
+        presentation.updatePlayer(player, getParticipantCount(), arena.getSpawnPoints().size(), state,
+                arena.getDisplayName(), statistics.get(player));
         if (state == GameState.WAITING && activePlayers.size() < getMinPlayers()) {
             startWaitingForPlayersTask();
         }
@@ -155,9 +148,7 @@ public class GameSession {
 
         if (adminSpectators.contains(uuid)) {
             if (isDisconnect) {
-                adminSpectators.remove(uuid);
-                adminSpectatorPreviousLocations.remove(uuid);
-                adminSpectatorPreviousGameModes.remove(uuid);
+                restoreAdminSpectator(player);
             } else {
                 restoreAdminSpectator(player);
             }
@@ -180,7 +171,7 @@ public class GameSession {
 
         if (state == GameState.WAITING || state == GameState.STARTING) {
             Location spawn = occupiedSpawns.remove(uuid);
-            luckyBlocks.removeAll(spawnManager.cleanupSpawn(spawn, spawnPillarHeightBlocks));
+            luckyBlocks.removeAll(players.cleanupSpawn(spawn, spawnPillarHeightBlocks));
 
             if (state == GameState.STARTING && activePlayers.size() < getMinPlayers()) {
                 cancelBeginGameCountdownTask();
@@ -192,7 +183,11 @@ public class GameSession {
             }
         }
 
-        playerManager.resetAndReturnToLobby(player, lobbyWorldName);
+        if (isDisconnect) {
+            players.release(player);
+        } else {
+            players.returnToLobby(player, lobbyWorldName);
+        }
         updateArenaHudForAllPlayers();
         if (state == GameState.WAITING && !activePlayers.isEmpty()) {
             startWaitingForPlayersTask();
@@ -214,24 +209,30 @@ public class GameSession {
     }
 
     public boolean adminSpectate(Player player) {
-        if (state != GameState.RUNNING) {
-            hudManager.sendArenaSpectateUnavailable(player);
-            return false;
-        }
-
-        if (activePlayers.contains(player.getUniqueId())) {
-            hudManager.sendCannotSpectateOwnGame(player);
+        if (!canAdminSpectate(player)) {
+            if (state != GameState.RUNNING) {
+                presentation.arenaSpectateUnavailable(player);
+            } else {
+                presentation.cannotSpectateOwnGame(player);
+            }
             return false;
         }
 
         adminSpectators.add(player.getUniqueId());
         adminSpectatorPreviousLocations.put(player.getUniqueId(), player.getLocation());
         adminSpectatorPreviousGameModes.put(player.getUniqueId(), player.getGameMode());
-        player.setGameMode(GameMode.SPECTATOR);
-        player.teleport(arena.getSpectatorCenter());
+        players.makeAdminSpectator(player, arena.getSpectatorCenter());
         updateArenaHudForAllPlayers();
-        hudManager.sendAdminSpectatorJoined(player, arena.getDisplayName());
+        presentation.adminSpectatorJoined(player, arena.getDisplayName());
         return true;
+    }
+
+    public boolean canAdminSpectate(Player player) {
+        if (state != GameState.RUNNING) {
+            return false;
+        }
+
+        return !activePlayers.contains(player.getUniqueId());
     }
 
 
@@ -249,12 +250,12 @@ public class GameSession {
         }
 
         rewardKiller(killer);
-        hudManager.broadcastElimination(dead, killer, arena.getDisplayName(), cause);
+        presentation.eliminated(dead, killer, arena, cause);
         gameEventManager.onPlayerEliminated(dead, killer);
 
         setPlayerAsSpectator(dead);
 
-        soundManager.playLoseSound(dead);
+        presentation.lost(dead);
 
         evaluateGameEnd();
     }
@@ -265,7 +266,7 @@ public class GameSession {
         }
 
         forceStart = true;
-        hudManager.broadcastForceStartedArena(startedBy, arena.getDisplayName());
+        presentation.forceStarted(startedBy, arena);
 
         if (beginGameCountdownTask == null) {
             startBeginGameCountdown();
@@ -288,34 +289,19 @@ public class GameSession {
         for (UUID uuid : new ArrayList<>(activePlayers)) {
             Player player = Bukkit.getPlayer(uuid);
             if (player != null) {
-                player.setGameMode(GameMode.SPECTATOR);
-                player.teleport(arena.getSpectatorCenter());
-                hudManager.sendSpectatorTitle(player);
+                players.makeEndingSpectator(player, arena.getSpectatorCenter());
+                presentation.spectator(player);
             }
             spectators.add(uuid);
         }
         activePlayers.clear();
 
         if (winner != null) {
-            statsManager.incrementWins(winner.getUniqueId());
-            hudManager.updatePlayerStats(winner, statsManager.getStats(winner.getUniqueId()).getKills(), statsManager.getStats(winner.getUniqueId()).getWins());
-            hudManager.broadcastWinner(winner.getName(), arena.getDisplayName());
-            for (UUID uuid : allPlayersSnapshot) {
-                Player player = Bukkit.getPlayer(uuid);
-                if (player != null) {
-                    soundManager.playWinSound(player);
-                    hudManager.sendWinnerTitle(player, winner.getName());
-                }
-            }
+            var winnerStats = statistics.recordWin(winner);
+            presentation.updateStats(winner, winnerStats);
+            presentation.winner(winner, arena, allPlayersSnapshot);
         } else {
-            hudManager.broadcastNoWinner(arena.getDisplayName());
-            for (UUID uuid : allPlayersSnapshot) {
-                Player player = Bukkit.getPlayer(uuid);
-                if (player != null) {
-                    soundManager.playLoseSound(player);
-                    hudManager.sendNoWinnerTitle(player);
-                }
-            }
+            presentation.noWinner(arena, allPlayersSnapshot);
         }
 
         endGameCountdownStartDelayTask = Bukkit.getScheduler().runTaskLater(plugin, () -> {
@@ -349,11 +335,10 @@ public class GameSession {
             }
 
             if (timeLeft[0] > 0) {
-                hudManager.sendReturnToLobbyTitle(player, timeLeft[0]);
+                presentation.returnCountdown(player, timeLeft[0]);
                 timeLeft[0]--;
             } else {
-                player.setGameMode(GameMode.SURVIVAL);
-                playerManager.resetAndReturnToLobby(player, lobbyWorldName);
+                players.returnToLobby(player, lobbyWorldName);
 
                 spectators.remove(uuid);
 
@@ -384,12 +369,7 @@ public class GameSession {
     private void rewardKiller(Player killer) {
         if (killer == null) return;
 
-        UUID uuid = killer.getUniqueId();
-        statsManager.incrementKills(uuid);
-
-        int kills = statsManager.getStats(uuid).getKills();
-        int wins = statsManager.getStats(uuid).getWins();
-        hudManager.updatePlayerStats(killer, kills, wins);
+        presentation.updateStats(killer, statistics.recordKill(killer));
     }
 
     private void setPlayerAsSpectator(Player player) {
@@ -402,43 +382,28 @@ public class GameSession {
         frozenPlayers.remove(uuid);
         lastDamagerMap.remove(uuid);
 
-        playerManager.prepareSpectatorInventory(player);
-        player.setGameMode(GameMode.SPECTATOR);
-        player.teleport(arena.getSpectatorCenter());
-
-        hudManager.sendSpectatorTitle(player);
+        players.makeSpectator(player, arena.getSpectatorCenter());
+        presentation.spectator(player);
     }
 
     private boolean teleportToSpawn(Player player) {
         if (arena.getSpawnPoints() == null || arena.getSpawnPoints().isEmpty()) {
-            hudManager.sendArenaConfigurationError(player);
+            presentation.arenaConfigurationError(player);
             return false;
         }
 
-        Location spawn = spawnManager.getFarthestSpawn(arena, getActivePlayerIds(), occupiedSpawns.values());
-        if (spawn == null) {
-            hudManager.sendNoSpawnAvailable(player);
-            return false;
-        }
-
-        Material pillarMaterial = arena.getGameMode() == ArenaGameMode.LUCKY_BLOCKS
-                ? Material.YELLOW_GLAZED_TERRACOTTA
-                : Material.BEDROCK;
-        List<Location> pillarBlocks = spawnManager.prepareSpawn(
-                spawn,
-                spawnPillarHeightBlocks,
-                pillarMaterial
+        SessionPlayerService.PreparedSpawn prepared = players.prepareForJoin(
+                player, arena, getActivePlayerIds(), occupiedSpawns.values(), spawnPillarHeightBlocks
         );
-        if (arena.getGameMode() == ArenaGameMode.LUCKY_BLOCKS) {
-            luckyBlocks.addAll(pillarBlocks);
+        if (prepared == null) {
+            presentation.noSpawnAvailable(player);
+            return false;
         }
-
-        occupiedSpawns.put(player.getUniqueId(), spawn);
-
-        Location teleportedLoc = spawn.clone().add(0.5, 1, 0.5);
-        teleportManager.teleportToSpawnPoint(player, teleportedLoc);
-
-        frozenPlayers.put(player.getUniqueId(), teleportedLoc);
+        if (arena.getGameMode() == ArenaGameMode.LUCKY_BLOCKS) {
+            luckyBlocks.addAll(prepared.pillarBlocks());
+        }
+        occupiedSpawns.put(player.getUniqueId(), prepared.spawn());
+        frozenPlayers.put(player.getUniqueId(), prepared.destination());
         return true;
     }
 
@@ -449,55 +414,45 @@ public class GameSession {
         state = GameState.RESETTING;
         updateArenaHudForAllPlayers();
 
+        evacuateArenaPlayers();
         resetSession();
         resetArenaInternal();
     }
 
-    public ArenaResetResult resetArenaManually(Runnable completionCallback) {
+    public ArenaResetResult resetArenaManually(Consumer<ArenaRebuildResult> completionCallback) {
         if (resetInProgress) return ArenaResetResult.ALREADY_RESETTING;
         if (Bukkit.getWorld(lobbyWorldName) == null) return ArenaResetResult.LOBBY_UNAVAILABLE;
-
-        Set<UUID> participants = new HashSet<>(activePlayers);
-        participants.addAll(spectators);
 
         resetInProgress = true;
         state = GameState.RESETTING;
         updateArenaHudForAllPlayers();
 
-        restoreAdminSpectators();
-
-        Set<Player> playersToReturn = new HashSet<>();
-        for (UUID uuid : participants) {
-            Player player = Bukkit.getPlayer(uuid);
-            if (player != null) {
-                playersToReturn.add(player);
-            }
-        }
-
-        World arenaWorld = Bukkit.getWorld(arena.getWorldName());
-        if (arenaWorld != null) {
-            playersToReturn.addAll(arenaWorld.getPlayers());
-        }
-
-        for (Player player : playersToReturn) {
-            playerManager.resetAndReturnToLobby(player, lobbyWorldName);
-        }
-
+        evacuateArenaPlayers();
         resetSession();
         resetArenaInternal(completionCallback);
         return ArenaResetResult.STARTED;
+    }
+
+    private void evacuateArenaPlayers() {
+        restoreAdminSpectators();
+
+        players.evacuate(getAllPlayerIds(), arena.getWorldName(), lobbyWorldName);
     }
 
     private void resetArenaInternal() {
         resetArenaInternal(null);
     }
 
-    private void resetArenaInternal(Runnable completionCallback) {
-        arenaManager.resetArena(arena, () -> {
-            state = GameState.WAITING;
+    private void resetArenaInternal(Consumer<ArenaRebuildResult> completionCallback) {
+        arenaManager.resetArena(arena, result -> {
             resetInProgress = false;
+            if (result == ArenaRebuildResult.SUCCESS) {
+                state = GameState.WAITING;
+            } else {
+                state = GameState.RESETTING;
+            }
             if (completionCallback != null) {
-                completionCallback.run();
+                completionCallback.accept(result);
             }
         });
     }
@@ -534,14 +489,13 @@ public class GameSession {
         cancelBeginGameCountdownTask();
         cancelWaitingForPlayersTask();
         cancelItemDistributionTask();
-        cancelFinalEventStartDelayTask();
         cancelEndGameCountdownStartDelayTask();
         cancelArenaResetDelayTask();
         gameEventManager.stop();
 
         cancelEndGameCountdownTasks();
 
-        stopWorldBorder();
+        worldBorderController.stop();
     }
 
     private boolean canJoin() {
@@ -551,6 +505,10 @@ public class GameSession {
                 && arena.isJoiningOpen()
                 && arena.getSpawnPoints() != null
                 && activePlayers.size() < arena.getSpawnPoints().size();
+    }
+
+    public boolean canAcceptPlayer() {
+        return canJoin();
     }
 
     public Set<UUID> getActivePlayerIds() {
@@ -634,7 +592,7 @@ public class GameSession {
 
     public double getEliminationY() {
         return arena.isFloorEnabled()
-                ? arena.getFloorY() - ArenaManager.FLOOR_ELIMINATION_MARGIN
+                ? arena.getFloorY() - ArenaFloorService.ELIMINATION_MARGIN
                 : 0.0;
     }
 
@@ -675,16 +633,16 @@ public class GameSession {
     }
 
     private void updateArenaHudForAllPlayers() {
-        hudManager.updateArenaInfoForAllPlayers(
+        presentation.updateArena(
                 getAllPlayerIds(),
-                getArenaPlayerCount(),
+                getParticipantCount(),
                 arena.getSpawnPoints().size(),
                 state,
                 arena.getDisplayName()
         );
     }
 
-    private int getArenaPlayerCount() {
+    public int getParticipantCount() {
         return activePlayers.size() + spectators.size();
     }
 
@@ -713,7 +671,7 @@ public class GameSession {
                 for (UUID uuid : activePlayers) {
                     Player player = Bukkit.getPlayer(uuid);
                     if (player != null) {
-                        hudManager.sendNotEnoughPlayersTitle(player);
+                        presentation.notEnoughPlayers(player);
                     }
                 }
 
@@ -723,14 +681,13 @@ public class GameSession {
             for (UUID uuid : activePlayers) {
                 Player player = Bukkit.getPlayer(uuid);
                 if (player != null) {
-                    hudManager.sendCountdownTitle(player, counter[0]);
-                    soundManager.playCountdownTickSound(player);
+                    presentation.countdown(player, counter[0]);
                 }
             }
 
             counter[0]--;
             if (counter[0] < 0) {
-                for (UUID uuid : getActivePlayerIds()) statsManager.incrementGamesPlayed(uuid);
+                statistics.recordGamesPlayed(getActivePlayerIds());
                 activeGameMode = arena.getGameMode();
                 activeItemIntervalSeconds = Math.max(1, arena.getItemCooldownSeconds());
                 prepareOccupiedPillarsForGameMode();
@@ -747,13 +704,12 @@ public class GameSession {
                     if (player == null) {
                         continue;
                     }
-                    hudManager.sendGameStartTitle(player);
-                    soundManager.playGameStartSound(player);
+                    presentation.gameStarted(player);
                 }
 
-                startWorldBorder();
+                worldBorderController.start();
                 if (!forceStart) {
-                    hudManager.broadcastGameStarted(arena.getDisplayName());
+                    presentation.gameStarted(arena);
                 }
                 startItemDistributionTask();
                 gameEventManager.scheduleRandomEvent();
@@ -772,13 +728,13 @@ public class GameSession {
             for (UUID uuid : activePlayers) {
                 Player player = Bukkit.getPlayer(uuid);
                 if (player != null) {
-                    double currentBorderSize = getCurrentBorderSize();
-                    hudManager.sendItemCooldown(
+                    double currentBorderSize = worldBorderController.getCurrentSize();
+                    presentation.itemCooldown(
                              player,
                              counter[0],
                              activeGameMode,
                              arena.getItemDeliveryMode(),
-                             getSecondsUntilNextBorderDecrease(currentBorderSize),
+                             worldBorderController.getSecondsUntilNextDecrease(currentBorderSize),
                              getActiveGameEventStatus()
                     );
                 }
@@ -799,7 +755,7 @@ public class GameSession {
                             }
                             itemManager.giveRandomItem(player);
                         }
-                        soundManager.playItemGivenSound(player);
+                        presentation.itemGiven(player);
                     }
                 }
                 previousMode[0] = arena.getItemDeliveryMode();
@@ -812,12 +768,8 @@ public class GameSession {
 
     private void prepareOccupiedPillarsForGameMode() {
         luckyBlocks.clear();
-        Material material = activeGameMode == ArenaGameMode.LUCKY_BLOCKS
-                ? Material.YELLOW_GLAZED_TERRACOTTA
-                : Material.BEDROCK;
-
         for (Location spawn : occupiedSpawns.values()) {
-            List<Location> blocks = spawnManager.prepareSpawn(spawn, spawnPillarHeightBlocks, material);
+            List<Location> blocks = players.rebuildPillar(spawn, spawnPillarHeightBlocks, activeGameMode);
             if (activeGameMode == ArenaGameMode.LUCKY_BLOCKS) {
                 luckyBlocks.addAll(blocks);
             }
@@ -836,7 +788,7 @@ public class GameSession {
             for (UUID uuid : activePlayers) {
                 Player player = Bukkit.getPlayer(uuid);
                 if (player != null) {
-                    hudManager.sendWaitingForPlayers(player, activePlayers.size(), getMinPlayers());
+                    presentation.waiting(player, activePlayers.size(), getMinPlayers());
                 }
             }
         }, 0L, 20L);
@@ -846,10 +798,7 @@ public class GameSession {
         for (UUID uuid : activePlayers) {
             Player player = Bukkit.getPlayer(uuid);
             if (player != null) {
-                playerManager.giveLeaveArenaItem(player);
-                playerManager.giveForceStartItem(player);
-                playerManager.giveAdminMenuItem(player);
-                playerManager.giveCurrentArenaSettingsItem(player, arena.getDisplayName());
+                players.giveWaitingItems(player, arena.getDisplayName());
             }
         }
     }
@@ -858,10 +807,7 @@ public class GameSession {
         for (UUID uuid : activePlayers) {
             Player player = Bukkit.getPlayer(uuid);
             if (player != null) {
-                playerManager.removeLeaveArenaItem(player);
-                playerManager.removeForceStartItem(player);
-                playerManager.removeAdminMenuItem(player);
-                playerManager.removeCurrentArenaSettingsItem(player);
+                players.removeWaitingItems(player);
             }
         }
     }
@@ -886,83 +832,9 @@ public class GameSession {
         Location previousLocation = adminSpectatorPreviousLocations.remove(uuid);
         GameMode previousGameMode = adminSpectatorPreviousGameModes.remove(uuid);
 
-        if (previousGameMode != null) {
-            player.setGameMode(previousGameMode);
-        } else {
-            player.setGameMode(GameMode.SURVIVAL);
-        }
-
-        if (previousLocation != null) {
-            player.teleport(previousLocation);
-        }
-
-        hudManager.resetScoreboard(player);
+        players.restoreAdminSpectator(player, previousLocation, previousGameMode);
+        presentation.resetScoreboard(player);
     }
-
-    public void startWorldBorder() {
-        List<Location> spawns = arena.getSpawnPoints();
-        if (spawns.isEmpty()) return;
-
-        World world = spawns.get(0).getWorld();
-        if (world == null) return;
-
-        double sumX = 0, sumY = 0, sumZ = 0;
-        for (Location spawn : spawns) {
-            sumX += spawn.getX() + 0.5;
-            sumY += spawn.getY() + 1;
-            sumZ += spawn.getZ() + 0.5;
-        }
-        double avgX = sumX / spawns.size();
-        double avgY = sumY / spawns.size();
-        double avgZ = sumZ / spawns.size();
-        Location borderCenter = new Location(world, avgX, avgY, avgZ);
-
-        double maxAxisDistance = 0;
-        for (Location spawn : spawns) {
-            double dx = (spawn.getX() + 0.5) - avgX;
-            double dz = (spawn.getZ() + 0.5) - avgZ;
-            double axisDistance = Math.max(Math.abs(dx), Math.abs(dz));
-            maxAxisDistance = Math.max(maxAxisDistance, axisDistance);
-        }
-
-        double initialSize = Math.max(
-                borderMinSize,
-                (maxAxisDistance + borderSpawnPaddingBlocks) * 2
-        );
-        WorldBorder border = world.getWorldBorder();
-        border.setCenter(borderCenter);
-        border.setSize(initialSize);
-        border.setDamageAmount(1.0);
-        border.setDamageBuffer(0);
-        border.setWarningDistance(0);
-        border.setWarningTime(0);
-
-        long borderShrinkSeconds = arena.getBorderShrinkSeconds();
-        borderShrinkEndTimeMillis = System.currentTimeMillis() + (borderShrinkSeconds * 1000L);
-        borderShrinkBlocksPerSecond = Math.max(0.0, (initialSize - borderMinSize) / borderShrinkSeconds);
-        startCalmWorldBorderShrink(border);
-
-        finalEventStartDelayTask = Bukkit.getScheduler().runTaskLater(
-                plugin,
-                gameEventManager::startLastBreathEvent,
-                borderShrinkSeconds * 20L
-        );
-    }
-
-    private void startCalmWorldBorderShrink(WorldBorder border) {
-        cancelWorldBorderShrinkTask();
-
-        worldBorderShrinkTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
-            long remainingMillis = Math.max(0L, borderShrinkEndTimeMillis - System.currentTimeMillis());
-            double nextSize = borderMinSize + (borderShrinkBlocksPerSecond * remainingMillis / 1000.0);
-            border.setSize(Math.max(borderMinSize, nextSize));
-
-            if (remainingMillis == 0L) {
-                cancelWorldBorderShrinkTask();
-            }
-        }, 1L, 1L);
-    }
-
 
     private void cancelEndGameCountdownTasks() {
         for (BukkitTask task : endGameCountdownTasks.values()) {
@@ -970,20 +842,6 @@ public class GameSession {
         }
 
         endGameCountdownTasks.clear();
-    }
-
-    private void cancelFinalEventStartDelayTask() {
-        if (finalEventStartDelayTask != null) {
-            finalEventStartDelayTask.cancel();
-            finalEventStartDelayTask = null;
-        }
-    }
-
-    private void cancelWorldBorderShrinkTask() {
-        if (worldBorderShrinkTask != null) {
-            worldBorderShrinkTask.cancel();
-            worldBorderShrinkTask = null;
-        }
     }
 
     private void cancelEndGameCountdownStartDelayTask() {
@@ -1021,55 +879,5 @@ public class GameSession {
             itemDistributionTask = null;
         }
     }
-
-    private void stopWorldBorder() {
-        cancelWorldBorderShrinkTask();
-        borderShrinkEndTimeMillis = -1L;
-        borderShrinkBlocksPerSecond = 0.0;
-        if (!arena.getSpawnPoints().isEmpty()) {
-            World world = arena.getSpawnPoints().getFirst().getWorld();
-            if (world != null) {
-                WorldBorder border = world.getWorldBorder();
-                border.setSize(1000);
-                border.setCenter(new Location(world, 0, 64, 0));
-                border.setDamageAmount(0.2);
-                border.setDamageBuffer(5);
-            }
-        }
-    }
-
-    private long getSecondsUntilNextBorderDecrease(double currentSize) {
-        if (borderShrinkEndTimeMillis <= 0L) {
-            return 0L;
-        }
-
-        if (borderShrinkBlocksPerSecond <= 0.0 || currentSize <= borderMinSize) {
-            return 0L;
-        }
-
-        double visibleSize = Math.ceil(currentSize);
-        double minVisibleSize = Math.ceil(borderMinSize);
-        if (visibleSize <= minVisibleSize) {
-            return 0L;
-        }
-
-        double nextVisibleSize = Math.max(minVisibleSize, visibleSize - 1.0);
-        double seconds = (currentSize - nextVisibleSize) / borderShrinkBlocksPerSecond;
-        return Math.max(1L, (long) Math.ceil(seconds));
-    }
-
-    private double getCurrentBorderSize() {
-        if (arena.getSpawnPoints().isEmpty()) {
-            return borderMinSize;
-        }
-
-        World world = arena.getSpawnPoints().getFirst().getWorld();
-        if (world == null) {
-            return borderMinSize;
-        }
-
-        return world.getWorldBorder().getSize();
-    }
-
 
 }

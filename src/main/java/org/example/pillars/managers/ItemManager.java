@@ -90,7 +90,7 @@ public class ItemManager {
     }
 
     public void giveLuckyBlock(Player player) {
-        ItemStack item = new ItemStack(Material.YELLOW_GLAZED_TERRACOTTA);
+        ItemStack item = new ItemStack(Material.SPONGE);
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
             meta.setDisplayName(translations.text("game-items.lucky-block"));

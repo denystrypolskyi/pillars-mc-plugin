@@ -73,25 +73,25 @@ public final class AdminArenaFloorMenu implements InventoryHolder {
                 "back"
         ));
         inventory.setItem(4, ArenaMenuItemFactory.visualItem(
-                materialIcon(arena.getFloorMaterial()),
+                materialIcon(arenaManager.getArenaFloorMaterial(arena)),
                 translations.text("menus.arena-floor.info-name"),
                 translations.list("menus.arena-floor.info-lore")
         ));
 
         inventory.setItem(10, actionItem(
-                arena.isFloorEnabled() ? Material.LIME_DYE : Material.GRAY_DYE,
-                translations.text(arena.isFloorEnabled()
+                arenaManager.isArenaFloorEnabled(arena) ? Material.LIME_DYE : Material.GRAY_DYE,
+                translations.text(arenaManager.isArenaFloorEnabled(arena)
                         ? "menus.arena-floor.disable"
                         : "menus.arena-floor.enable"),
                 translations.list("menus.arena-floor.toggle-lore"),
                 "toggle"
         ));
         inventory.setItem(13, actionItem(
-                materialIcon(arena.getFloorMaterial()),
+                materialIcon(arenaManager.getArenaFloorMaterial(arena)),
                 translations.text("menus.arena-floor.material"),
                 translations.list(
                         "menus.arena-floor.material-lore",
-                        "material", displayMaterial(arena.getFloorMaterial())
+                        "material", displayMaterial(arenaManager.getArenaFloorMaterial(arena))
                 ),
                 "material"
         ));
@@ -105,14 +105,14 @@ public final class AdminArenaFloorMenu implements InventoryHolder {
         inventory.setItem(30, adjustableItem(
                 Material.COMPASS,
                 translations.text("menus.arena-floor.radius"),
-                String.valueOf(arena.getFloorRadius()),
+                String.valueOf(arenaManager.getArenaFloorRadius(arena)),
                 "radius",
                 translations.text("menus.arena-floor.adjust-control")
         ));
         inventory.setItem(32, adjustableItem(
                 Material.SCAFFOLDING,
                 translations.text("menus.arena-floor.y"),
-                arena.getFloorY() + " " + UiPalette.SEPARATOR + "(" + minimumFloorY + "–" + maximumFloorY + ")",
+                arenaManager.getArenaFloorY(arena) + " " + UiPalette.SEPARATOR + "(" + minimumFloorY + "–" + maximumFloorY + ")",
                 "y",
                 translations.text(
                         "menus.arena-floor.height-control",
@@ -174,7 +174,7 @@ public final class AdminArenaFloorMenu implements InventoryHolder {
     }
 
     private ItemStack shapeItem(FloorShape shape) {
-        boolean selected = arena.getFloorShape() == shape;
+        boolean selected = arenaManager.getArenaFloorShape(arena) == shape;
         return actionItem(
                 shapeIcon(shape),
                 translations.text("menus.arena-floor.shape-option", "shape", shapeName(shape)),
@@ -209,7 +209,13 @@ public final class AdminArenaFloorMenu implements InventoryHolder {
             return;
         }
         if (action.equals("toggle")) {
-            save(!arena.isFloorEnabled(), arena.getFloorMaterial(), arena.getFloorShape(), arena.getFloorRadius(), arena.getFloorY());
+            save(
+                    !arenaManager.isArenaFloorEnabled(arena),
+                    arenaManager.getArenaFloorMaterial(arena),
+                    arenaManager.getArenaFloorShape(arena),
+                    arenaManager.getArenaFloorRadius(arena),
+                    arenaManager.getArenaFloorY(arena)
+            );
             return;
         }
         if (action.equals("material")) {
@@ -259,7 +265,13 @@ public final class AdminArenaFloorMenu implements InventoryHolder {
         }
         if (action.startsWith("shape:")) {
             FloorShape shape = FloorShape.fromConfig(action.substring("shape:".length()));
-            save(arena.isFloorEnabled(), arena.getFloorMaterial(), shape, arena.getFloorRadius(), arena.getFloorY());
+            save(
+                    arenaManager.isArenaFloorEnabled(arena),
+                    arenaManager.getArenaFloorMaterial(arena),
+                    shape,
+                    arenaManager.getArenaFloorRadius(arena),
+                    arenaManager.getArenaFloorY(arena)
+            );
             return;
         }
 
@@ -267,11 +279,17 @@ public final class AdminArenaFloorMenu implements InventoryHolder {
         if (delta == 0) return;
         if (event.isShiftClick()) delta *= 5;
 
-        int radius = arena.getFloorRadius();
-        int y = arena.getFloorY();
+        int radius = arenaManager.getArenaFloorRadius(arena);
+        int y = arenaManager.getArenaFloorY(arena);
         if (action.equals("radius")) radius += delta;
         if (action.equals("y")) y += delta;
-        save(arena.isFloorEnabled(), arena.getFloorMaterial(), arena.getFloorShape(), radius, y);
+        save(
+                arenaManager.isArenaFloorEnabled(arena),
+                arenaManager.getArenaFloorMaterial(arena),
+                arenaManager.getArenaFloorShape(arena),
+                radius,
+                y
+        );
     }
 
     private void save(boolean enabled, Material material, FloorShape shape, int radius, int y) {

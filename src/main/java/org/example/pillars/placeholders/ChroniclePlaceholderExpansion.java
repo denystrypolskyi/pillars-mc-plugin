@@ -79,7 +79,7 @@ public final class ChroniclePlaceholderExpansion extends PlaceholderExpansion {
         return switch (key) {
             case "in_arena" -> Boolean.toString(session != null);
             case "arena" -> session == null ? "—" : session.getArena().getDisplayName();
-            case "players" -> session == null ? "0" : Integer.toString(session.getAllPlayerIds().size());
+            case "players" -> session == null ? "0" : Integer.toString(session.getParticipantCount());
             case "max_players" -> session == null || session.getArena().getSpawnPoints() == null
                     ? "0"
                     : Integer.toString(session.getArena().getSpawnPoints().size());
@@ -100,7 +100,7 @@ public final class ChroniclePlaceholderExpansion extends PlaceholderExpansion {
         if (state == null) return plain("scoreboard.state.unknown");
         return switch (state) {
             case WAITING -> plain("scoreboard.state.waiting");
-            case STARTING, COUNTDOWN -> plain("scoreboard.state.starting");
+            case STARTING -> plain("scoreboard.state.starting");
             case RUNNING -> plain("scoreboard.state.running");
             case ENDING -> plain("scoreboard.state.ending");
             case RESETTING -> plain("scoreboard.state.resetting");

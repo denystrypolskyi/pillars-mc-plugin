@@ -17,8 +17,7 @@ import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 
 public final class TranslationManager {
-    private static final String DEFAULT_LANGUAGE = "en";
-    private static final Set<String> SUPPORTED_LANGUAGES = Set.of("en", "ru");
+    private static final String RESOURCE_NAME = "messages_ru.yml";
     private static final Set<String> PLAYER_FACING_SECTIONS = Set.of(
             "plugin", "lobby-items", "admin-item", "arena-admin-item", "game-items",
             "scoreboard", "titles", "action-bar", "messages", "rarities", "units",
@@ -26,40 +25,16 @@ public final class TranslationManager {
     );
 
     private final JavaPlugin plugin;
-    private final String language;
-    private final YamlConfiguration english;
     private final YamlConfiguration selected;
-    private final YamlConfiguration defaultEnglish;
     private final YamlConfiguration defaultSelected;
     private final Set<String> reportedMissingKeys = new HashSet<>();
 
     public TranslationManager(JavaPlugin plugin) {
         this.plugin = plugin;
 
-        saveLanguageFile(DEFAULT_LANGUAGE);
-        saveLanguageFile("ru");
-
-        String configuredLanguage = plugin.getConfig().getString("language", DEFAULT_LANGUAGE);
-        String normalizedLanguage = configuredLanguage == null
-                ? DEFAULT_LANGUAGE
-                : configuredLanguage.trim().toLowerCase(Locale.ROOT);
-
-        if (!SUPPORTED_LANGUAGES.contains(normalizedLanguage)) {
-            plugin.getLogger().warning(
-                    "Unsupported language '" + configuredLanguage + "'. Falling back to '" + DEFAULT_LANGUAGE + "'."
-            );
-            normalizedLanguage = DEFAULT_LANGUAGE;
-        }
-
-        this.language = normalizedLanguage;
-        this.english = loadLanguageFile(DEFAULT_LANGUAGE);
-        this.selected = language.equals(DEFAULT_LANGUAGE) ? english : loadLanguageFile(language);
-        this.defaultEnglish = loadBundledLanguageFile(DEFAULT_LANGUAGE);
-        this.defaultSelected = language.equals(DEFAULT_LANGUAGE) ? defaultEnglish : loadBundledLanguageFile(language);
-    }
-
-    public String getLanguage() {
-        return language;
+        saveLanguageFile();
+        this.selected = loadLanguageFile();
+        this.defaultSelected = loadBundledLanguageFile();
     }
 
     public String displayName(String identifier) {
@@ -112,27 +87,21 @@ public final class TranslationManager {
     private List<String> resolveList(String key) {
         if (selected.isList(key)) return selected.getStringList(key);
         if (defaultSelected.isList(key)) return defaultSelected.getStringList(key);
-        if (english.isList(key)) return english.getStringList(key);
-        if (defaultEnglish.isList(key)) return defaultEnglish.getStringList(key);
         return null;
     }
 
     public String plural(String key, int amount, Object... placeholders) {
+        int lastTwoDigits = Math.abs(amount) % 100;
+        int lastDigit = Math.abs(amount) % 10;
         String form;
-        if (language.equals("ru")) {
-            int lastTwoDigits = Math.abs(amount) % 100;
-            int lastDigit = Math.abs(amount) % 10;
-            if (lastTwoDigits >= 11 && lastTwoDigits <= 14) {
-                form = "many";
-            } else if (lastDigit == 1) {
-                form = "one";
-            } else if (lastDigit >= 2 && lastDigit <= 4) {
-                form = "few";
-            } else {
-                form = "many";
-            }
+        if (lastTwoDigits >= 11 && lastTwoDigits <= 14) {
+            form = "many";
+        } else if (lastDigit == 1) {
+            form = "one";
+        } else if (lastDigit >= 2 && lastDigit <= 4) {
+            form = "few";
         } else {
-            form = amount == 1 ? "one" : "many";
+            form = "many";
         }
 
         return text(key + "." + form, placeholders);
@@ -199,46 +168,38 @@ public final class TranslationManager {
     private String resolveString(String key) {
         String value = selected.getString(key);
         if (value == null) value = defaultSelected.getString(key);
-        if (value == null) value = english.getString(key);
-        if (value == null) value = defaultEnglish.getString(key);
         return value;
     }
 
-    private void saveLanguageFile(String languageCode) {
-        String resourceName = resourceName(languageCode);
-        File destination = new File(plugin.getDataFolder(), resourceName);
+    private void saveLanguageFile() {
+        File destination = new File(plugin.getDataFolder(), RESOURCE_NAME);
         if (!destination.exists()) {
-            plugin.saveResource(resourceName, false);
+            plugin.saveResource(RESOURCE_NAME, false);
         }
     }
 
-    private YamlConfiguration loadLanguageFile(String languageCode) {
-        return YamlConfiguration.loadConfiguration(new File(plugin.getDataFolder(), resourceName(languageCode)));
+    private YamlConfiguration loadLanguageFile() {
+        return YamlConfiguration.loadConfiguration(new File(plugin.getDataFolder(), RESOURCE_NAME));
     }
 
-    private YamlConfiguration loadBundledLanguageFile(String languageCode) {
-        String resourceName = resourceName(languageCode);
-        InputStream stream = plugin.getResource(resourceName);
+    private YamlConfiguration loadBundledLanguageFile() {
+        InputStream stream = plugin.getResource(RESOURCE_NAME);
         if (stream == null) {
-            plugin.getLogger().warning("Bundled translation file not found: " + resourceName);
+            plugin.getLogger().warning("Не найден встроенный файл переводов: " + RESOURCE_NAME);
             return new YamlConfiguration();
         }
 
         try (InputStreamReader reader = new InputStreamReader(stream, StandardCharsets.UTF_8)) {
             return YamlConfiguration.loadConfiguration(reader);
         } catch (IOException e) {
-            plugin.getLogger().warning("Could not load bundled translation file " + resourceName + ": " + e.getMessage());
+            plugin.getLogger().warning("Не удалось загрузить встроенный файл переводов " + RESOURCE_NAME + ": " + e.getMessage());
             return new YamlConfiguration();
         }
     }
 
-    private String resourceName(String languageCode) {
-        return "messages_" + languageCode + ".yml";
-    }
-
     private void reportMissingKey(String key) {
         if (reportedMissingKeys.add(key)) {
-            plugin.getLogger().warning("Missing translation key: " + key);
+            plugin.getLogger().warning("Отсутствует ключ перевода: " + key);
         }
     }
 }

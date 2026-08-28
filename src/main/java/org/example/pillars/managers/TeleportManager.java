@@ -9,10 +9,6 @@ public class TeleportManager {
         player.teleport(spawn);
     }
 
-    public void teleportToLobby(Player player) {
-        teleportToLobby(player, "world");
-    }
-
     public boolean teleportToLobby(Player player, String worldName) {
         org.bukkit.World world = Bukkit.getWorld(worldName);
         if (world == null) {

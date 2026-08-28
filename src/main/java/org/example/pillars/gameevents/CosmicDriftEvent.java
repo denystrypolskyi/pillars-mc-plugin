@@ -10,9 +10,11 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.example.pillars.GameSession;
 import org.example.pillars.managers.HudManager;
 
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 
-public final class CosmicDriftEvent implements GameEvent {
+public final class CosmicDriftEvent implements GameEvent, PlayerLifecycleGameEvent {
     private static final String ID = "cosmic_drift";
 
     private final GameSession session;
@@ -21,6 +23,7 @@ public final class CosmicDriftEvent implements GameEvent {
     private final AttributeModifier gravityModifier;
     private final AttributeModifier jumpModifier;
     private final AttributeModifier fallDamageModifier;
+    private final Set<UUID> modifiedPlayers = new HashSet<>();
 
     private boolean active;
 
@@ -75,8 +78,21 @@ public final class CosmicDriftEvent implements GameEvent {
             applyModifier(player, Attribute.GRAVITY, gravityModifier);
             applyModifier(player, Attribute.JUMP_STRENGTH, jumpModifier);
             applyModifier(player, Attribute.FALL_DAMAGE_MULTIPLIER, fallDamageModifier);
+            modifiedPlayers.add(uuid);
         }
         hudManager.sendCosmicDriftStarted(session.getAllPlayerIds(), durationSeconds);
+    }
+
+    @Override
+    public boolean onPlayerEliminated(Player eliminated, Player killer) {
+        removePlayerModifiers(eliminated);
+        return false;
+    }
+
+    @Override
+    public boolean onPlayerRemoved(Player player) {
+        removePlayerModifiers(player);
+        return false;
     }
 
     @Override
@@ -84,15 +100,22 @@ public final class CosmicDriftEvent implements GameEvent {
         if (!active) return;
 
         active = false;
-        for (UUID uuid : session.getAllPlayerIds()) {
+        for (UUID uuid : new HashSet<>(modifiedPlayers)) {
             Player player = Bukkit.getPlayer(uuid);
             if (player == null || !player.isOnline()) continue;
 
-            removeModifier(player, Attribute.GRAVITY, gravityModifier);
-            removeModifier(player, Attribute.JUMP_STRENGTH, jumpModifier);
-            removeModifier(player, Attribute.FALL_DAMAGE_MULTIPLIER, fallDamageModifier);
+            removePlayerModifiers(player);
         }
+        modifiedPlayers.clear();
         hudManager.sendCosmicDriftEnded(session.getAllPlayerIds());
+    }
+
+    private void removePlayerModifiers(Player player) {
+        if (!modifiedPlayers.remove(player.getUniqueId())) return;
+
+        removeModifier(player, Attribute.GRAVITY, gravityModifier);
+        removeModifier(player, Attribute.JUMP_STRENGTH, jumpModifier);
+        removeModifier(player, Attribute.FALL_DAMAGE_MULTIPLIER, fallDamageModifier);
     }
 
     private AttributeModifier createMultiplierModifier(

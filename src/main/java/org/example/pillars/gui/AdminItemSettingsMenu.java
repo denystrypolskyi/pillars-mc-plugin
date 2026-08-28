@@ -16,12 +16,12 @@ import org.example.pillars.managers.HudManager;
 import org.example.pillars.managers.ItemManager;
 import org.example.pillars.managers.TranslationManager;
 
-import java.util.ArrayList;
 import java.util.List;
 
-public class AdminHubMenu implements InventoryHolder {
-    private static final NamespacedKey ACTION_KEY = new NamespacedKey("pillars", "admin_hub_action");
+public final class AdminItemSettingsMenu implements InventoryHolder {
+    private static final NamespacedKey ACTION_KEY = new NamespacedKey("pillars", "admin_item_settings_action");
     private static final int MENU_SIZE = 27;
+
     private final Inventory inventory;
     private final Player player;
     private final ItemManager itemManager;
@@ -30,57 +30,50 @@ public class AdminHubMenu implements InventoryHolder {
     private final GameSessionManager gameSessionManager;
     private final TranslationManager translations;
 
-    public AdminHubMenu(Player player, ItemManager itemManager, HudManager hudManager, ArenaManager arenaManager, GameSessionManager gameSessionManager) {
+    public AdminItemSettingsMenu(Player player, ItemManager itemManager, HudManager hudManager, ArenaManager arenaManager, GameSessionManager gameSessionManager) {
         this.player = player;
         this.itemManager = itemManager;
         this.hudManager = hudManager;
         this.arenaManager = arenaManager;
         this.gameSessionManager = gameSessionManager;
         this.translations = hudManager.getTranslations();
-        this.inventory = Bukkit.createInventory(this, MENU_SIZE, translations.text("menus.admin-hub.title"));
+        this.inventory = Bukkit.createInventory(this, MENU_SIZE, translations.text("menus.item-settings.title"));
         buildMenu();
     }
 
     private void buildMenu() {
         ArenaMenuItemFactory.fill(inventory, Material.BLACK_STAINED_GLASS_PANE);
 
-        inventory.setItem(10, actionItem(
-                Material.MAP,
-                translations.text("menus.admin-hub.arena-settings"),
-                translations.list("menus.admin-hub.arena-settings-lore"),
-                "arenas"
+        inventory.setItem(4, actionItem(
+                Material.COMPARATOR,
+                translations.text("menus.item-settings.rarity-chances"),
+                translations.list("menus.item-settings.rarity-chances-lore"),
+                "rarity"
         ));
-        inventory.setItem(12, actionItem(
+        inventory.setItem(11, actionItem(
                 Material.CHEST,
-                translations.text("menus.admin-hub.item-settings"),
-                translations.list("menus.admin-hub.item-settings-lore"),
-                "items"
+                translations.text("menus.item-settings.common-items"),
+                translations.list("menus.item-settings.common-items-lore"),
+                "pool:common"
         ));
-        boolean eventsEnabled = gameSessionManager.areRandomEventsEnabled();
-        inventory.setItem(14, actionItem(
-                Material.SPONGE,
-                translations.text("menus.admin-hub.lucky-blocks"),
-                translations.list("menus.admin-hub.lucky-blocks-lore"),
-                "lucky-blocks"
+        inventory.setItem(13, actionItem(
+                Material.ENDER_CHEST,
+                translations.text("menus.item-settings.rare-items"),
+                translations.list("menus.item-settings.rare-items-lore"),
+                "pool:rare"
         ));
-        inventory.setItem(16, actionItem(
-                eventsEnabled ? Material.LIME_DYE : Material.GRAY_DYE,
-                translations.text("menus.admin-hub.random-events"),
-                randomEventsLore(eventsEnabled),
-                "toggle-events"
+        inventory.setItem(15, actionItem(
+                Material.NETHERITE_BLOCK,
+                translations.text("menus.item-settings.legendary-items"),
+                translations.list("menus.item-settings.legendary-items-lore"),
+                "pool:legendary"
         ));
-    }
-
-    private List<String> randomEventsLore(boolean enabled) {
-        List<String> lore = new ArrayList<>();
-        lore.add(translations.text(
-                enabled
-                        ? "menus.admin-hub.random-events-enabled"
-                        : "menus.admin-hub.random-events-disabled"
+        inventory.setItem(18, actionItem(
+                Material.ARROW,
+                translations.text("menus.common.back"),
+                List.of(translations.text("menus.common.back-admin-lore")),
+                "back"
         ));
-        lore.add("");
-        lore.addAll(translations.list("menus.admin-hub.random-events-lore"));
-        return lore;
     }
 
     private ItemStack actionItem(Material material, String name, List<String> lore, String action) {
@@ -108,34 +101,19 @@ public class AdminHubMenu implements InventoryHolder {
             clicker.closeInventory();
             return;
         }
-
         if (event.getCurrentItem() == null || !event.getCurrentItem().hasItemMeta()) return;
 
         String action = event.getCurrentItem().getItemMeta()
                 .getPersistentDataContainer()
                 .get(ACTION_KEY, PersistentDataType.STRING);
-
         if (action == null) return;
 
-        if (action.equals("items")) {
-            new AdminItemSettingsMenu(clicker, itemManager, hudManager, arenaManager, gameSessionManager).open();
-            return;
-        }
-
-        if (action.equals("arenas")) {
-            new AdminArenaListMenu(clicker, arenaManager, gameSessionManager, itemManager, hudManager).open();
-            return;
-        }
-
-        if (action.equals("lucky-blocks")) {
-            new AdminLuckyBlockMenu(clicker, itemManager, hudManager, arenaManager, gameSessionManager).open();
-            return;
-        }
-
-        if (action.equals("toggle-events")) {
-            gameSessionManager.toggleRandomEvents();
-            buildMenu();
-            return;
+        if (action.equals("back")) {
+            new AdminHubMenu(clicker, itemManager, hudManager, arenaManager, gameSessionManager).open();
+        } else if (action.equals("rarity")) {
+            new AdminConfigMenu(clicker, itemManager, hudManager, arenaManager, gameSessionManager).open();
+        } else if (action.startsWith("pool:")) {
+            new AdminItemPoolMenu(clicker, arenaManager, gameSessionManager, itemManager, hudManager, action.substring("pool:".length())).open();
         }
     }
 
@@ -144,7 +122,7 @@ public class AdminHubMenu implements InventoryHolder {
         return inventory;
     }
 
-    public static boolean isAdminHubMenu(Inventory inv) {
-        return inv != null && inv.getHolder() instanceof AdminHubMenu;
+    public static boolean isAdminItemSettingsMenu(Inventory inventory) {
+        return inventory != null && inventory.getHolder() instanceof AdminItemSettingsMenu;
     }
 }

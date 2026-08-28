@@ -12,6 +12,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
+import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.example.pillars.GameSession;
 import org.example.pillars.PillarsPlugin;
@@ -23,9 +24,11 @@ import java.util.UUID;
 
 public class GameSessionPlayerListener implements Listener {
 
+    private final PillarsPlugin plugin;
     private final GameSessionManager gameSessionManager;
 
-    public GameSessionPlayerListener(GameSessionManager gameSessionManager) {
+    public GameSessionPlayerListener(PillarsPlugin plugin, GameSessionManager gameSessionManager) {
+        this.plugin = plugin;
         this.gameSessionManager = gameSessionManager;
     }
 
@@ -42,7 +45,25 @@ public class GameSessionPlayerListener implements Listener {
         }
     }
 
-    @EventHandler
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onPlayerChangedWorld(PlayerChangedWorldEvent event) {
+        Player player = event.getPlayer();
+        GameSession session = gameSessionManager.getSessionByPlayer(player);
+        if (session == null || isInSessionWorld(player, session)) return;
+
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            GameSession currentSession = gameSessionManager.getSessionByPlayer(player);
+            if (currentSession != session || isInSessionWorld(player, session)) return;
+
+            gameSessionManager.leaveSession(player);
+        });
+    }
+
+    private boolean isInSessionWorld(Player player, GameSession session) {
+        return player.getWorld().getName().equals(session.getArena().getWorldName());
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onDamage(EntityDamageEvent event) {
 
         if (!(event.getEntity() instanceof Player player)) return;
@@ -85,10 +106,8 @@ public class GameSessionPlayerListener implements Listener {
 
         if (event instanceof EntityDamageByEntityEvent e) {
             Player damager = resolveDamagingPlayer(e.getDamager());
-            if (damager != null && session.hasPlayer(damager)) {
-
-                return damager;
-            }
+            Player eligibleDamager = resolveEligibleKiller(session, victim, damager);
+            if (eligibleDamager != null) return eligibleDamager;
         }
 
         UUID lastDamagerUUID =
@@ -98,11 +117,7 @@ public class GameSessionPlayerListener implements Listener {
 
         Player lastDamager = Bukkit.getPlayer(lastDamagerUUID);
 
-        if (lastDamager != null && session.hasPlayer(lastDamager)) {
-            return lastDamager;
-        }
-
-        return null;
+        return resolveEligibleKiller(session, victim, lastDamager);
     }
 
     @EventHandler
@@ -124,7 +139,7 @@ public class GameSessionPlayerListener implements Listener {
                     session.getLastDamager(player.getUniqueId());
 
             if (lastDamager != null) {
-                killer = Bukkit.getPlayer(lastDamager);
+                killer = resolveEligibleKiller(session, player, Bukkit.getPlayer(lastDamager));
             }
 
             session.playerDeath(player, killer, EliminationCause.VOID);
@@ -201,5 +216,10 @@ public class GameSessionPlayerListener implements Listener {
             return player;
         }
         return null;
+    }
+
+    private Player resolveEligibleKiller(GameSession session, Player victim, Player candidate) {
+        if (candidate == null || candidate.getUniqueId().equals(victim.getUniqueId())) return null;
+        return session.isActivePlayer(candidate) ? candidate : null;
     }
 }

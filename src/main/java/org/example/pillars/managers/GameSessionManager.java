@@ -1,10 +1,12 @@
 package org.example.pillars.managers;
 
-import org.bukkit.entity.Player;
+import org.bukkit.Bukkit;
 import org.bukkit.World;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.example.pillars.entities.Arena;
 import org.example.pillars.GameSession;
+import org.example.pillars.enums.ArenaRebuildResult;
 import org.example.pillars.enums.ArenaResetResult;
 import org.example.pillars.enums.GameState;
 import org.example.pillars.gameevents.GameEventStatus;
@@ -12,6 +14,7 @@ import org.example.pillars.gameevents.NextGameEventStatus;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 public class GameSessionManager {
     private final JavaPlugin plugin;
@@ -76,25 +79,45 @@ public class GameSessionManager {
     }
 
     public void joinSession(Player player, Arena arena) {
+        GameSession target = getOrCreateSession(arena);
         GameSession current = getSessionByPlayer(player);
+        if (current == target) {
+            return;
+        }
+
+        if (!target.canAcceptPlayer()) {
+            target.playerJoin(player);
+            return;
+        }
+
         if (current != null) {
             leaveCurrentSession(player, current);
         }
 
-        GameSession target = getOrCreateSession(arena);
         target.playerJoin(player);
     }
 
     public boolean spectateSession(Player player, Arena arena) {
-        GameSession current = getSessionByPlayer(player);
-        if (current != null) {
-            leaveCurrentSession(player, current);
-        }
-
         GameSession target = getSession(arena);
         if (target == null) {
             hudManager.sendArenaSpectateUnavailable(player);
             return false;
+        }
+
+        GameSession current = getSessionByPlayer(player);
+        if (current == target) {
+            if (target.canAdminSpectate(player)) {
+                return true;
+            }
+            return target.adminSpectate(player);
+        }
+
+        if (!target.canAdminSpectate(player)) {
+            return target.adminSpectate(player);
+        }
+
+        if (current != null) {
+            leaveCurrentSession(player, current);
         }
 
         return target.adminSpectate(player);
@@ -310,9 +333,15 @@ public class GameSessionManager {
 
     public ArenaResetResult resetArenaManually(Player startedBy, Arena arena) {
         GameSession session = getOrCreateSession(arena);
-        ArenaResetResult result = session.resetArenaManually(() -> {
-            if (startedBy.isOnline()) {
-                hudManager.sendManualArenaResetCompleted(startedBy, arena.getDisplayName());
+        UUID startedById = startedBy.getUniqueId();
+        ArenaResetResult result = session.resetArenaManually(rebuildResult -> {
+            Player onlineStarter = Bukkit.getPlayer(startedById);
+            if (onlineStarter != null) {
+                if (rebuildResult == ArenaRebuildResult.SUCCESS) {
+                    hudManager.sendManualArenaResetCompleted(onlineStarter, arena.getDisplayName());
+                } else {
+                    hudManager.sendManualArenaResetFailed(onlineStarter, arena.getDisplayName());
+                }
             }
         });
 

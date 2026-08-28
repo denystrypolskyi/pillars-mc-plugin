@@ -14,7 +14,6 @@ import org.example.pillars.entities.Arena;
 import org.example.pillars.enums.ArenaGameMode;
 import org.example.pillars.enums.ArenaResetResult;
 import org.example.pillars.enums.ItemDeliveryMode;
-import org.example.pillars.listeners.LuckyBlockListener;
 import org.example.pillars.managers.ArenaManager;
 import org.example.pillars.managers.GameSessionManager;
 import org.example.pillars.managers.HudManager;
@@ -93,8 +92,7 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
                                 "menus.arena-settings.item-delivery-modes."
                                         + arena.getItemDeliveryMode().configValue()
                         ),
-                        "seconds", arena.getItemCooldownSeconds(),
-                        "break_time", formatLuckyBlockBreakSeconds()
+                        "seconds", arena.getItemCooldownSeconds()
                 ),
                 "item_mode"
         ));
@@ -115,7 +113,7 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
 
         inventory.setItem(21, actionItem(
                 arena.getGameMode() == ArenaGameMode.LUCKY_BLOCKS
-                        ? Material.YELLOW_GLAZED_TERRACOTTA
+                        ? Material.SPONGE
                         : Material.BEDROCK,
                 translations.text("menus.arena-settings.game-mode"),
                 translations.list(
@@ -123,8 +121,7 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
                         "mode", translations.text(
                                 "menus.arena-settings.game-modes." + arena.getGameMode().configValue()
                         ),
-                        "seconds", arena.getItemCooldownSeconds(),
-                        "break_time", formatLuckyBlockBreakSeconds()
+                        "seconds", arena.getItemCooldownSeconds()
                 ),
                 "game_mode"
         ));
@@ -193,10 +190,6 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
         if (material == Material.LAVA) return Material.LAVA_BUCKET;
         if (material == Material.WATER) return Material.WATER_BUCKET;
         return material;
-    }
-
-    private String formatLuckyBlockBreakSeconds() {
-        return Double.toString(LuckyBlockListener.BREAK_DURATION_TICKS / 20.0);
     }
 
     private ItemStack displayItem(Material material, String name, String value, String... lore) {

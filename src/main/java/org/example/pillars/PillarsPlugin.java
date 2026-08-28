@@ -26,10 +26,22 @@ public final class PillarsPlugin extends JavaPlugin {
         );
         SoundManager soundManager = new SoundManager();
         boolean tabEnabled = getServer().getPluginManager().isPluginEnabled("TAB");
-        HudManager hudManager = new HudManager(translationManager, tabEnabled);
+        PlayerScoreboardService scoreboardService = new PlayerScoreboardService(translationManager, tabEnabled);
+        HudManager hudManager = new HudManager(translationManager, scoreboardService);
         SpawnManager spawnManager = new SpawnManager();
 
-        ArenaManager arenaManager = new ArenaManager(this, translationManager);
+        ArenaFloorService arenaFloorService = new ArenaFloorService();
+        ArenaWorldService arenaWorldService = new ArenaWorldService(
+                this,
+                translationManager,
+                arenaFloorService
+        );
+        ArenaManager arenaManager = new ArenaManager(
+                this,
+                translationManager,
+                arenaFloorService,
+                arenaWorldService
+        );
         StatsManager statsManager = new StatsManager(this, translationManager);
 
         PlayerManager playerManager = new PlayerManager(this, teleportManager, hudManager, statsManager);
@@ -58,7 +70,7 @@ public final class PillarsPlugin extends JavaPlugin {
         }
 
         getServer().getPluginManager().registerEvents(
-                new GameSessionPlayerListener(gameSessionManager),
+                new GameSessionPlayerListener(this, gameSessionManager),
                 this
         );
 

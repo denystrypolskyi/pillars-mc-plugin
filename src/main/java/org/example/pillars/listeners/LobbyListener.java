@@ -56,7 +56,7 @@ public class LobbyListener implements Listener {
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
-        playerManager.resetAndReturnToLobby(player);
+        playerManager.enterLobby(player);
     }
 
     @EventHandler
@@ -83,7 +83,7 @@ public class LobbyListener implements Listener {
     private void handleRespawn(Player player) {
         GameSession session = gameSessionManager.getSessionByPlayer(player);
         if (session == null) {
-            playerManager.resetAndReturnToLobby(player);
+            playerManager.enterLobby(player);
             return;
         }
 

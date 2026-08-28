@@ -44,6 +44,45 @@ import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 public final class LuckyBlockOutcomeManager implements Listener {
+    private final JavaPlugin plugin;
+    private final LuckyBlockEffectService effects;
+
+    public LuckyBlockOutcomeManager(JavaPlugin plugin, ItemManager itemManager, TranslationManager translations) {
+        this.plugin = plugin;
+        this.effects = new LuckyBlockEffectService(
+                plugin,
+                itemManager,
+                translations,
+                new LuckyBlockOutcomeSelector(plugin)
+        );
+    }
+
+    public void trigger(Player player, Location blockLocation, GameSession session) {
+        effects.trigger(player, blockLocation, session);
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onTemporaryFluidFlow(BlockFromToEvent event) {
+        effects.onTemporaryFluidFlow(event);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onLuckyTntExplode(EntityExplodeEvent event) {
+        effects.onLuckyTntExplode(event);
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onTrackedFallingBlockLand(EntityChangeBlockEvent event) {
+        effects.onTrackedFallingBlockLand(event);
+    }
+
+    @EventHandler
+    public void onPluginDisable(PluginDisableEvent event) {
+        if (event.getPlugin() == plugin) effects.cleanupAll();
+    }
+}
+
+final class LuckyBlockEffectService {
     private static final List<EntityType> PASSIVE_MOBS = List.of(
             EntityType.CHICKEN, EntityType.PIG, EntityType.SHEEP, EntityType.COW, EntityType.RABBIT
     );
@@ -54,27 +93,32 @@ public final class LuckyBlockOutcomeManager implements Listener {
     private final JavaPlugin plugin;
     private final ItemManager itemManager;
     private final TranslationManager translations;
-    private final Map<GameSession, Map<UUID, Deque<LuckyOutcome>>> recentOutcomes = new HashMap<>();
+    private final LuckyBlockOutcomeSelector selector;
     private final Map<GameSession, Set<UUID>> spawnedEntities = new HashMap<>();
     private final Set<UUID> luckyExplosives = new HashSet<>();
     private final Map<Location, TemporaryFluid> fluidBlocks = new HashMap<>();
     private final Set<TemporaryFluid> activeFluids = new HashSet<>();
     private final Set<TemporaryBlocks> activeTemporaryBlocks = new HashSet<>();
 
-    public LuckyBlockOutcomeManager(JavaPlugin plugin, ItemManager itemManager, TranslationManager translations) {
+    LuckyBlockEffectService(
+            JavaPlugin plugin,
+            ItemManager itemManager,
+            TranslationManager translations,
+            LuckyBlockOutcomeSelector selector
+    ) {
         this.plugin = plugin;
         this.itemManager = itemManager;
         this.translations = translations;
+        this.selector = selector;
         Bukkit.getScheduler().runTaskTimer(plugin, this::cleanupEndedSessions, 20L, 20L);
     }
 
     public void trigger(Player player, Location blockLocation, GameSession session) {
-        LuckyOutcome outcome = selectOutcome(player, session);
+        LuckyOutcome outcome = selector.select(player, session);
         execute(outcome, player, blockLocation, session);
-        rememberOutcome(player, session, outcome);
+        selector.remember(player, session, outcome);
     }
 
-    @EventHandler(ignoreCancelled = true)
     public void onTemporaryFluidFlow(BlockFromToEvent event) {
         TemporaryFluid fluid = fluidBlocks.get(event.getBlock().getLocation());
         if (fluid == null) return;
@@ -84,7 +128,6 @@ public final class LuckyBlockOutcomeManager implements Listener {
         fluidBlocks.put(destination, fluid);
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onLuckyTntExplode(EntityExplodeEvent event) {
         if (!luckyExplosives.remove(event.getEntity().getUniqueId())) return;
         if (!plugin.getConfig().getBoolean("settings.luckyBlocks.tntBlockDamage", false)) {
@@ -92,7 +135,6 @@ public final class LuckyBlockOutcomeManager implements Listener {
         }
     }
 
-    @EventHandler(ignoreCancelled = true)
     public void onTrackedFallingBlockLand(EntityChangeBlockEvent event) {
         UUID entityId = event.getEntity().getUniqueId();
         boolean tracked = spawnedEntities.values().stream().anyMatch(entities -> entities.contains(entityId));
@@ -100,82 +142,6 @@ public final class LuckyBlockOutcomeManager implements Listener {
 
         event.setCancelled(true);
         event.getEntity().remove();
-    }
-
-    @EventHandler
-    public void onPluginDisable(PluginDisableEvent event) {
-        if (event.getPlugin() != plugin) return;
-        cleanupAll();
-    }
-
-    private LuckyOutcome selectOutcome(Player player, GameSession session) {
-        int itemChancePercent = Math.max(0, Math.min(100,
-                plugin.getConfig().getInt("settings.luckyBlocks.itemChancePercent", 85)));
-        int goodPercent = chancePercent("goodPercent", 7);
-        int neutralPercent = chancePercent("neutralPercent", 3);
-        int badPercent = chancePercent("badPercent", 5);
-        int totalPercent = itemChancePercent + goodPercent + neutralPercent + badPercent;
-        if (totalPercent <= 0) return LuckyOutcome.RANDOM_ITEM;
-        int roll = ThreadLocalRandom.current().nextInt(totalPercent);
-        if (roll < itemChancePercent) {
-            return LuckyOutcome.RANDOM_ITEM;
-        }
-
-        LuckyCategory category;
-        if (roll < itemChancePercent + goodPercent) {
-            category = LuckyCategory.GOOD;
-        } else if (roll < itemChancePercent + goodPercent + neutralPercent) {
-            category = LuckyCategory.NEUTRAL;
-        } else {
-            category = LuckyCategory.BAD;
-        }
-        List<LuckyOutcome> candidates = new ArrayList<>();
-        Deque<LuckyOutcome> recent = recentOutcomes
-                .computeIfAbsent(session, ignored -> new HashMap<>())
-                .computeIfAbsent(player.getUniqueId(), ignored -> new ArrayDeque<>());
-
-        for (LuckyOutcome outcome : LuckyOutcome.values()) {
-            if (outcome != LuckyOutcome.RANDOM_ITEM
-                    && outcome.category == category
-                    && !recent.contains(outcome)) {
-                candidates.add(outcome);
-            }
-        }
-        if (candidates.isEmpty()) {
-            for (LuckyOutcome outcome : LuckyOutcome.values()) {
-                if (outcome != LuckyOutcome.RANDOM_ITEM && outcome.category == category) {
-                    candidates.add(outcome);
-                }
-            }
-        }
-        return weightedOutcome(candidates);
-    }
-
-    private int chancePercent(String key, int defaultValue) {
-        return Math.max(0, Math.min(100,
-                plugin.getConfig().getInt("settings.luckyBlocks.categories." + key, defaultValue)));
-    }
-
-    private LuckyOutcome weightedOutcome(List<LuckyOutcome> candidates) {
-        int total = candidates.stream().mapToInt(outcome -> outcome.weight).sum();
-        int roll = ThreadLocalRandom.current().nextInt(Math.max(1, total));
-        for (LuckyOutcome outcome : candidates) {
-            roll -= outcome.weight;
-            if (roll < 0) return outcome;
-        }
-        return candidates.getFirst();
-    }
-
-    private void rememberOutcome(Player player, GameSession session, LuckyOutcome outcome) {
-        int historySize = Math.max(0, Math.min(10,
-                plugin.getConfig().getInt("settings.luckyBlocks.antiRepeatHistorySize", 4)));
-        if (historySize == 0) return;
-
-        Deque<LuckyOutcome> recent = recentOutcomes
-                .computeIfAbsent(session, ignored -> new HashMap<>())
-                .computeIfAbsent(player.getUniqueId(), ignored -> new ArrayDeque<>());
-        recent.addLast(outcome);
-        while (recent.size() > historySize) recent.removeFirst();
     }
 
     private void execute(LuckyOutcome outcome, Player player, Location location, GameSession session) {
@@ -414,11 +380,9 @@ public final class LuckyBlockOutcomeManager implements Listener {
                 luckyExplosives.remove(entityId);
             }
             spawnedEntities.remove(session);
-            recentOutcomes.remove(session);
+            selector.forget(session);
         }
-        for (GameSession session : new HashSet<>(recentOutcomes.keySet())) {
-            if (!session.isLuckyBlocksModeActive()) recentOutcomes.remove(session);
-        }
+        selector.forgetEndedSessions();
         for (TemporaryFluid fluid : new HashSet<>(activeFluids)) {
             if (!fluid.session().isLuckyBlocksModeActive()) cleanupFluid(fluid);
         }
@@ -427,7 +391,7 @@ public final class LuckyBlockOutcomeManager implements Listener {
         }
     }
 
-    private void cleanupAll() {
+    void cleanupAll() {
         for (Set<UUID> entityIds : spawnedEntities.values()) {
             for (UUID entityId : entityIds) {
                 Entity entity = Bukkit.getEntity(entityId);
@@ -437,7 +401,7 @@ public final class LuckyBlockOutcomeManager implements Listener {
         for (TemporaryFluid fluid : new HashSet<>(activeFluids)) cleanupFluid(fluid);
         for (TemporaryBlocks blocks : new HashSet<>(activeTemporaryBlocks)) cleanupTemporaryBlocks(blocks);
         spawnedEntities.clear();
-        recentOutcomes.clear();
+        selector.clear();
         luckyExplosives.clear();
     }
 
@@ -461,13 +425,13 @@ public final class LuckyBlockOutcomeManager implements Listener {
         return location.getBlock().getLocation().add(0.5, 1.0, 0.5);
     }
 
-    private enum LuckyCategory {
+    enum LuckyCategory {
         GOOD,
         NEUTRAL,
         BAD
     }
 
-    private enum LuckyOutcome {
+    enum LuckyOutcome {
         RANDOM_ITEM(LuckyCategory.GOOD, "random-item", 10),
         DIAMONDS(LuckyCategory.GOOD, "diamonds", 5),
         GOLDEN_APPLE(LuckyCategory.GOOD, "golden-apple", 6),
@@ -501,9 +465,9 @@ public final class LuckyBlockOutcomeManager implements Listener {
         TNT_RAIN(LuckyCategory.BAD, "tnt-rain", 1),
         MINI_BOSS(LuckyCategory.BAD, "mini-boss", 1);
 
-        private final LuckyCategory category;
+        final LuckyCategory category;
         private final String id;
-        private final int weight;
+        final int weight;
 
         LuckyOutcome(LuckyCategory category, String id, int weight) {
             this.category = category;
@@ -512,7 +476,121 @@ public final class LuckyBlockOutcomeManager implements Listener {
         }
     }
 
-    private record TemporaryFluid(GameSession session, Material material, Set<Location> locations) {}
+    private static final class TemporaryFluid {
+        private final GameSession session;
+        private final Material material;
+        private final Set<Location> locations;
 
-    private record TemporaryBlocks(GameSession session, Material material, Set<Location> locations) {}
+        private TemporaryFluid(GameSession session, Material material, Set<Location> locations) {
+            this.session = session;
+            this.material = material;
+            this.locations = locations;
+        }
+
+        private GameSession session() { return session; }
+        private Material material() { return material; }
+        private Set<Location> locations() { return locations; }
+    }
+
+    private static final class TemporaryBlocks {
+        private final GameSession session;
+        private final Material material;
+        private final Set<Location> locations;
+
+        private TemporaryBlocks(GameSession session, Material material, Set<Location> locations) {
+            this.session = session;
+            this.material = material;
+            this.locations = locations;
+        }
+
+        private GameSession session() { return session; }
+        private Material material() { return material; }
+        private Set<Location> locations() { return locations; }
+    }
+}
+
+final class LuckyBlockOutcomeSelector {
+    private final JavaPlugin plugin;
+    private final Map<GameSession, Map<UUID, Deque<LuckyBlockEffectService.LuckyOutcome>>> recentOutcomes =
+            new HashMap<>();
+
+    LuckyBlockOutcomeSelector(JavaPlugin plugin) {
+        this.plugin = plugin;
+    }
+
+    LuckyBlockEffectService.LuckyOutcome select(Player player, GameSession session) {
+        int itemChance = boundedPercent("settings.luckyBlocks.itemChancePercent", 85);
+        int good = boundedPercent("settings.luckyBlocks.categories.goodPercent", 7);
+        int neutral = boundedPercent("settings.luckyBlocks.categories.neutralPercent", 3);
+        int bad = boundedPercent("settings.luckyBlocks.categories.badPercent", 5);
+        int total = itemChance + good + neutral + bad;
+        if (total <= 0) return LuckyBlockEffectService.LuckyOutcome.RANDOM_ITEM;
+
+        int roll = ThreadLocalRandom.current().nextInt(total);
+        if (roll < itemChance) return LuckyBlockEffectService.LuckyOutcome.RANDOM_ITEM;
+
+        LuckyBlockEffectService.LuckyCategory category = roll < itemChance + good
+                ? LuckyBlockEffectService.LuckyCategory.GOOD
+                : roll < itemChance + good + neutral
+                        ? LuckyBlockEffectService.LuckyCategory.NEUTRAL
+                        : LuckyBlockEffectService.LuckyCategory.BAD;
+        Deque<LuckyBlockEffectService.LuckyOutcome> recent = recentOutcomes
+                .computeIfAbsent(session, ignored -> new HashMap<>())
+                .computeIfAbsent(player.getUniqueId(), ignored -> new ArrayDeque<>());
+        List<LuckyBlockEffectService.LuckyOutcome> candidates = candidates(category, recent);
+        if (candidates.isEmpty()) candidates = candidates(category, new ArrayDeque<>());
+        return weighted(candidates);
+    }
+
+    void remember(Player player, GameSession session, LuckyBlockEffectService.LuckyOutcome outcome) {
+        int historySize = Math.max(0, Math.min(10,
+                plugin.getConfig().getInt("settings.luckyBlocks.antiRepeatHistorySize", 4)));
+        if (historySize == 0) return;
+        Deque<LuckyBlockEffectService.LuckyOutcome> recent = recentOutcomes
+                .computeIfAbsent(session, ignored -> new HashMap<>())
+                .computeIfAbsent(player.getUniqueId(), ignored -> new ArrayDeque<>());
+        recent.addLast(outcome);
+        while (recent.size() > historySize) recent.removeFirst();
+    }
+
+    void forget(GameSession session) {
+        recentOutcomes.remove(session);
+    }
+
+    void forgetEndedSessions() {
+        recentOutcomes.keySet().removeIf(session -> !session.isLuckyBlocksModeActive());
+    }
+
+    void clear() {
+        recentOutcomes.clear();
+    }
+
+    private List<LuckyBlockEffectService.LuckyOutcome> candidates(
+            LuckyBlockEffectService.LuckyCategory category,
+            Deque<LuckyBlockEffectService.LuckyOutcome> excluded
+    ) {
+        List<LuckyBlockEffectService.LuckyOutcome> candidates = new ArrayList<>();
+        for (LuckyBlockEffectService.LuckyOutcome outcome : LuckyBlockEffectService.LuckyOutcome.values()) {
+            if (outcome != LuckyBlockEffectService.LuckyOutcome.RANDOM_ITEM
+                    && outcome.category == category
+                    && !excluded.contains(outcome)) {
+                candidates.add(outcome);
+            }
+        }
+        return candidates;
+    }
+
+    private LuckyBlockEffectService.LuckyOutcome weighted(List<LuckyBlockEffectService.LuckyOutcome> candidates) {
+        int total = candidates.stream().mapToInt(outcome -> outcome.weight).sum();
+        int roll = ThreadLocalRandom.current().nextInt(Math.max(1, total));
+        for (LuckyBlockEffectService.LuckyOutcome outcome : candidates) {
+            roll -= outcome.weight;
+            if (roll < 0) return outcome;
+        }
+        return candidates.getFirst();
+    }
+
+    private int boundedPercent(String path, int fallback) {
+        return Math.max(0, Math.min(100, plugin.getConfig().getInt(path, fallback)));
+    }
 }
