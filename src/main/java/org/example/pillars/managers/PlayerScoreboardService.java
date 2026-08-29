@@ -55,16 +55,16 @@ public final class PlayerScoreboardService {
                 "infoHeader", "playerLine", "onlineLine", "statusLine", "arenaLine"
         ))) return;
 
-        teams.get("infoHeader").setPrefix(isolate(UiPalette.SECTION + text("scoreboard.info-header")));
-        teams.get("playerLine").setPrefix(isolate(UiPalette.LABEL + text("scoreboard.player-label")));
+        teams.get("infoHeader").setPrefix(isolate(UiPalette.SECTION + text("scoreboard.layout.info-header")));
+        teams.get("playerLine").setPrefix(isolate(styledText("scoreboard.layout.player-label")));
         teams.get("playerLine").setSuffix(isolate(UiPalette.VALUE + player.getName()));
-        teams.get("onlineLine").setPrefix(isolate(UiPalette.LABEL + text("scoreboard.online-label")));
+        teams.get("onlineLine").setPrefix(isolate(styledText("scoreboard.layout.online-label")));
         teams.get("onlineLine").setSuffix(isolate(
                 UiPalette.VALUE + players + UiPalette.SEPARATOR + "/" + UiPalette.VALUE + maxPlayers
         ));
-        teams.get("statusLine").setPrefix(isolate(UiPalette.LABEL + text("scoreboard.status-label")));
+        teams.get("statusLine").setPrefix(isolate(styledText("scoreboard.layout.status-label")));
         teams.get("statusLine").setSuffix(formatState(state));
-        teams.get("arenaLine").setPrefix(isolate(UiPalette.LABEL + text("scoreboard.arena-label")));
+        teams.get("arenaLine").setPrefix(isolate(styledText("scoreboard.layout.arena-label")));
         teams.get("arenaLine").setSuffix(isolate(UiPalette.VALUE + arenaName));
     }
 
@@ -77,14 +77,14 @@ public final class PlayerScoreboardService {
                 "infoHeader", "playerLine", "statHeader", "killsLine", "rateLine"
         ))) return;
 
-        teams.get("infoHeader").setPrefix(isolate(UiPalette.SECTION + text("scoreboard.info-header")));
-        teams.get("playerLine").setPrefix(isolate(UiPalette.LABEL + text("scoreboard.player-label")));
+        teams.get("infoHeader").setPrefix(isolate(UiPalette.SECTION + text("scoreboard.layout.info-header")));
+        teams.get("playerLine").setPrefix(isolate(styledText("scoreboard.layout.player-label")));
         teams.get("playerLine").setSuffix(isolate(UiPalette.VALUE + player.getName()));
-        teams.get("statHeader").setPrefix(isolate(UiPalette.SECTION + text("scoreboard.stats-header")));
-        teams.get("killsLine").setPrefix(isolate(UiPalette.LABEL + text("scoreboard.kills-label")));
+        teams.get("statHeader").setPrefix(isolate(UiPalette.SECTION + text("scoreboard.layout.stats-header")));
+        teams.get("killsLine").setPrefix(isolate(styledText("scoreboard.layout.kills-label")));
         teams.get("killsLine").setSuffix(isolate(UiPalette.VALUE + kills));
         int winRate = gamesPlayed <= 0 ? 0 : (int) Math.round(wins * 100.0 / gamesPlayed);
-        teams.get("rateLine").setPrefix(isolate(UiPalette.LABEL + text("scoreboard.rate-label")));
+        teams.get("rateLine").setPrefix(isolate(styledText("scoreboard.layout.rate-label")));
         teams.get("rateLine").setSuffix(isolate(
                 UiPalette.VALUE + wins
                         + UiPalette.SEPARATOR + "/"
@@ -204,5 +204,9 @@ public final class PlayerScoreboardService {
     private String text(String key) {
         String stripped = ChatColor.stripColor(translations.text(key));
         return stripped == null ? "" : stripped;
+    }
+
+    private String styledText(String key) {
+        return translations.text(key);
     }
 }

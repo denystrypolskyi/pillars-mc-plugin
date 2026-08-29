@@ -1,3 +1,12 @@
+# Срок действия настроек:
+# - общие параметры сессии и параметры игровых событий читаются один раз при запуске;
+# - enabled у игровых событий изменяется сразу через административное меню;
+# - параметры Lucky Block читаются непосредственно перед следующим результатом;
+# - редкость и пулы предметов изменяются сразу для следующей выдачи;
+# - joiningOpen и minPlayers арены действуют во время ожидания/отсчёта;
+# - gameMode, itemDeliveryMode, itemCooldownSeconds и borderShrinkSeconds
+#   фиксируются при старте матча, поэтому изменения относятся к следующему матчу;
+# - floor и spawnPoints становятся активными только после успешной перестройки арены.
 settings:
   beginCountdownSeconds: 5
   endGameLobbyCountdownSeconds: 5
@@ -6,6 +15,7 @@ settings:
   borderMinSize: 1
   borderSpawnPaddingBlocks: 10
   spawnPillarHeightBlocks: 5
+  floorColumnsPerTick: 512
   lobbyWorldName: "lobby"
   luckyBlocks:
     itemChancePercent: 85

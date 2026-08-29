@@ -20,6 +20,7 @@ import org.example.pillars.ui.UiPalette;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 public class AdminItemPoolMenu implements InventoryHolder {
     private static final NamespacedKey ACTION_KEY = new NamespacedKey("pillars", "admin_pool_action");
@@ -223,8 +224,16 @@ public class AdminItemPoolMenu implements InventoryHolder {
             return;
         }
 
-        if (itemManager.addItemWithDefaultWeight(rarity, heldItem.getType())) {
-            new AdminItemPoolMenu(clicker, arenaManager, gameSessionManager, itemManager, hudManager, rarity, page).open();
+        UUID playerId = clicker.getUniqueId();
+        if (!itemManager.addItemWithDefaultWeight(rarity, heldItem.getType(), saved -> {
+            Player currentPlayer = Bukkit.getPlayer(playerId);
+            if (currentPlayer == null) return;
+            if (!saved) {
+                hudManager.sendItemPoolsSaveFailed(currentPlayer);
+            }
+            new AdminItemPoolMenu(currentPlayer, arenaManager, gameSessionManager, itemManager, hudManager, rarity, page).open();
+        })) {
+            hudManager.sendItemAddUsage(clicker);
         }
     }
 
@@ -236,8 +245,16 @@ public class AdminItemPoolMenu implements InventoryHolder {
             return;
         }
 
-        if (itemManager.removeItem(rarity, material)) {
-            new AdminItemPoolMenu(clicker, arenaManager, gameSessionManager, itemManager, hudManager, rarity, page).open();
+        UUID playerId = clicker.getUniqueId();
+        if (!itemManager.removeItem(rarity, material, saved -> {
+            Player currentPlayer = Bukkit.getPlayer(playerId);
+            if (currentPlayer == null) return;
+            if (!saved) {
+                hudManager.sendItemPoolsSaveFailed(currentPlayer);
+            }
+            new AdminItemPoolMenu(currentPlayer, arenaManager, gameSessionManager, itemManager, hudManager, rarity, page).open();
+        })) {
+            hudManager.sendItemRemoveUsage(clicker);
         }
     }
 

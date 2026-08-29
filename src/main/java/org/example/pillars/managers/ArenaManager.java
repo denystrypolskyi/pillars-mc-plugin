@@ -5,6 +5,7 @@ import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.example.pillars.PillarsPlugin;
+import org.example.pillars.config.AsyncYamlWriter;
 import org.example.pillars.entities.Arena;
 import org.example.pillars.enums.ArenaGameMode;
 import org.example.pillars.enums.ArenaRebuildResult;
@@ -27,6 +28,7 @@ public class ArenaManager {
     private final TranslationManager translations;
     private final ArenaFloorService floorService;
     private final ArenaWorldService worldService;
+    private final AsyncYamlWriter yamlWriter;
     private final Map<String, Arena> arenas = new HashMap<>();
     private final Map<String, ArenaRebuildDraft> rebuildDrafts = new HashMap<>();
 
@@ -40,16 +42,24 @@ public class ArenaManager {
     ) {
     }
 
+    private record PendingArenaDefinition(
+            String configKey,
+            String worldName,
+            ConfigurationSection section
+    ) {}
+
     public ArenaManager(
             PillarsPlugin plugin,
             TranslationManager translations,
             ArenaFloorService floorService,
-            ArenaWorldService worldService
+            ArenaWorldService worldService,
+            AsyncYamlWriter yamlWriter
     ) {
         this.plugin = plugin;
         this.translations = translations;
         this.floorService = floorService;
         this.worldService = worldService;
+        this.yamlWriter = yamlWriter;
         removeLegacyGlobalBorderShrinkSetting();
         loadArenas();
     }
@@ -59,7 +69,7 @@ public class ArenaManager {
         if (!plugin.getConfig().contains(legacyPath)) return;
 
         plugin.getConfig().set(legacyPath, null);
-        plugin.saveConfig();
+        yamlWriter.savePluginConfig();
     }
 
     public Arena getArena(String worldName) {
@@ -112,6 +122,7 @@ public class ArenaManager {
             worldNameCounts.merge(configuredWorldName.toLowerCase(Locale.ROOT), 1, Integer::sum);
         }
         Set<String> loggedDuplicateWorldNames = new HashSet<>();
+        List<PendingArenaDefinition> definitions = new ArrayList<>();
 
         for (String key : section.getKeys(false)) {
             ConfigurationSection sec = section.getConfigurationSection(key);
@@ -131,63 +142,104 @@ public class ArenaManager {
                 continue;
             }
 
-            World world = worldService.loadOrCreate(worldName);
-            if (world == null) continue;
-
-            Arena arena = new Arena();
-            arena.setConfigKey(key);
-            arena.setWorldName(worldName);
-            arena.setDisplayName(getLocalizedDisplayName(sec, worldName));
-            arena.setJoiningOpen(sec.getBoolean("joiningOpen", true));
-            arena.setItemCooldownSeconds(sec.getInt("itemCooldownSeconds", 0));
-            arena.setItemDeliveryMode(ItemDeliveryMode.fromConfig(sec.getString("itemDeliveryMode", "single")));
-            arena.setGameMode(ArenaGameMode.fromConfig(sec.getString("gameMode", "standard")));
-
-            List<Location> spawns = new ArrayList<>();
-            for (Object obj : sec.getList("spawnPoints", Collections.emptyList())) {
-                if (obj instanceof List<?> coords && coords.size() >= 3
-                        && coords.get(0) instanceof Number
-                        && coords.get(1) instanceof Number
-                        && coords.get(2) instanceof Number) {
-                    double x = ((Number) coords.get(0)).doubleValue();
-                    double y = ((Number) coords.get(1)).doubleValue();
-                    double z = ((Number) coords.get(2)).doubleValue();
-                    spawns.add(new Location(world, x, y, z));
-                }
-            }
-
-            if (spawns.isEmpty()) {
-                plugin.getLogger().severe(translations.text("logs.arena-no-spawns", "world", worldName));
-                continue;
-            }
-
-            if (spawns.size() < MIN_PLAYERS_TO_START) {
-                plugin.getLogger().severe(translations.text("logs.arena-too-small", "world", worldName));
-                continue;
-            }
-
-            arena.setSpawnPoints(spawns);
-            int defaultBorderShrinkSeconds = switch (spawns.size()) {
-                case 4 -> 240;
-                case 8 -> 360;
-                default -> 480;
-            };
-            arena.setBorderShrinkSeconds(Math.max(
-                    MIN_BORDER_SHRINK_SECONDS,
-                    Math.min(MAX_BORDER_SHRINK_SECONDS,
-                            sec.getInt("borderShrinkSeconds", defaultBorderShrinkSeconds))
-            ));
-            floorService.loadSettings(arena, sec);
-            int defaultMinPlayers = Math.max(MIN_PLAYERS_TO_START, (int) Math.ceil(spawns.size() / 2.0));
-            arena.setMinPlayers(Math.max(
-                    MIN_PLAYERS_TO_START,
-                    Math.min(spawns.size(), sec.getInt("minPlayers", defaultMinPlayers))
-            ));
-            arenas.put(worldName, arena);
-            floorService.generate(arena);
+            definitions.add(new PendingArenaDefinition(key, worldName, sec));
         }
 
-        plugin.getLogger().info(translations.text("logs.arenas-loaded", "count", arenas.size()));
+        if (definitions.isEmpty()) {
+            plugin.getLogger().info(translations.text("logs.arenas-loaded", "count", 0));
+            return;
+        }
+
+        int[] remaining = {definitions.size()};
+        for (PendingArenaDefinition definition : definitions) {
+            worldService.loadOrCreateAsync(definition.worldName(), world -> {
+                if (world == null) {
+                    finishArenaLoad(remaining);
+                    return;
+                }
+                initializeArena(definition, world, () -> finishArenaLoad(remaining));
+            });
+        }
+    }
+
+    private void initializeArena(PendingArenaDefinition definition, World world, Runnable completion) {
+        ConfigurationSection sec = definition.section();
+        String worldName = definition.worldName();
+
+        Arena arena = new Arena();
+        arena.setConfigKey(definition.configKey());
+        arena.setWorldName(worldName);
+        arena.setDisplayName(getLocalizedDisplayName(sec, worldName));
+        arena.setJoiningOpen(sec.getBoolean("joiningOpen", true));
+        arena.setItemCooldownSeconds(sec.getInt("itemCooldownSeconds", 0));
+        arena.setItemDeliveryMode(ItemDeliveryMode.fromConfig(sec.getString("itemDeliveryMode", "single")));
+        arena.setGameMode(ArenaGameMode.fromConfig(sec.getString("gameMode", "standard")));
+
+        List<Location> spawns = new ArrayList<>();
+        for (Object obj : sec.getList("spawnPoints", Collections.emptyList())) {
+            if (obj instanceof List<?> coords && coords.size() >= 3
+                    && coords.get(0) instanceof Number
+                    && coords.get(1) instanceof Number
+                    && coords.get(2) instanceof Number) {
+                double x = ((Number) coords.get(0)).doubleValue();
+                double y = ((Number) coords.get(1)).doubleValue();
+                double z = ((Number) coords.get(2)).doubleValue();
+                spawns.add(new Location(world, x, y, z));
+            }
+        }
+
+        if (spawns.isEmpty()) {
+            plugin.getLogger().severe(translations.text("logs.arena-no-spawns", "world", worldName));
+            completion.run();
+            return;
+        }
+
+        if (spawns.size() < MIN_PLAYERS_TO_START) {
+            plugin.getLogger().severe(translations.text("logs.arena-too-small", "world", worldName));
+            completion.run();
+            return;
+        }
+
+        arena.setSpawnPoints(spawns);
+        int defaultBorderShrinkSeconds = switch (spawns.size()) {
+            case 4 -> 240;
+            case 8 -> 360;
+            default -> 480;
+        };
+        arena.setBorderShrinkSeconds(Math.max(
+                MIN_BORDER_SHRINK_SECONDS,
+                Math.min(MAX_BORDER_SHRINK_SECONDS,
+                        sec.getInt("borderShrinkSeconds", defaultBorderShrinkSeconds))
+        ));
+        floorService.loadSettings(arena, sec);
+        int defaultMinPlayers = Math.max(MIN_PLAYERS_TO_START, (int) Math.ceil(spawns.size() / 2.0));
+        arena.setMinPlayers(Math.max(
+                MIN_PLAYERS_TO_START,
+                Math.min(spawns.size(), sec.getInt("minPlayers", defaultMinPlayers))
+        ));
+
+        floorService.generate(
+                arena,
+                () -> {
+                    arenas.put(worldName, arena);
+                    completion.run();
+                },
+                error -> {
+                    plugin.getLogger().log(java.util.logging.Level.SEVERE, translations.text(
+                            "logs.arena-floor-generation-failed",
+                            "world", worldName,
+                            "error", error.getMessage()
+                    ), error);
+                    completion.run();
+                }
+        );
+    }
+
+    private void finishArenaLoad(int[] remaining) {
+        remaining[0]--;
+        if (remaining[0] == 0) {
+            plugin.getLogger().info(translations.text("logs.arenas-loaded", "count", arenas.size()));
+        }
     }
 
     public void resetArena(Arena arena, Consumer<ArenaRebuildResult> callback) {
@@ -217,6 +269,11 @@ public class ArenaManager {
         return arenas.values();
     }
 
+    public void shutdown() {
+        floorService.shutdown();
+        worldService.shutdown();
+    }
+
     public void updateSafeArenaSettings(Arena arena, int minPlayers, int itemCooldownSeconds) {
         if (arena == null || arena.getSpawnPoints() == null
                 || arena.getSpawnPoints().size() < MIN_PLAYERS_TO_START) {
@@ -243,7 +300,7 @@ public class ArenaManager {
 
         plugin.getConfig().set("arenas." + configKey + ".minPlayers", clampedMinPlayers);
         plugin.getConfig().set("arenas." + configKey + ".itemCooldownSeconds", clampedItemCooldownSeconds);
-        plugin.saveConfig();
+        yamlWriter.savePluginConfig();
     }
 
     public void updateArenaJoiningOpen(Arena arena, boolean joiningOpen) {
@@ -263,7 +320,7 @@ public class ArenaManager {
         }
 
         plugin.getConfig().set("arenas." + configKey + ".joiningOpen", joiningOpen);
-        plugin.saveConfig();
+        yamlWriter.savePluginConfig();
     }
 
     public void updateArenaItemDeliveryMode(Arena arena, ItemDeliveryMode mode) {
@@ -280,7 +337,7 @@ public class ArenaManager {
         }
 
         plugin.getConfig().set("arenas." + configKey + ".itemDeliveryMode", mode.name());
-        plugin.saveConfig();
+        yamlWriter.savePluginConfig();
     }
 
     public void updateArenaGameMode(Arena arena, ArenaGameMode mode) {
@@ -297,7 +354,7 @@ public class ArenaManager {
         }
 
         plugin.getConfig().set("arenas." + configKey + ".gameMode", mode.name());
-        plugin.saveConfig();
+        yamlWriter.savePluginConfig();
     }
 
     public void updateArenaBorderShrinkSeconds(Arena arena, int seconds) {
@@ -319,7 +376,7 @@ public class ArenaManager {
         }
 
         plugin.getConfig().set("arenas." + configKey + ".borderShrinkSeconds", clampedSeconds);
-        plugin.saveConfig();
+        yamlWriter.savePluginConfig();
     }
 
     public void updateArenaFloorSettings(
@@ -469,7 +526,7 @@ public class ArenaManager {
                 ))
                 .toList();
         plugin.getConfig().set("arenas." + configKey + ".spawnPoints", serializedSpawns);
-        plugin.saveConfig();
+        yamlWriter.savePluginConfig();
     }
 
     private List<Location> copyLocations(List<Location> locations) {

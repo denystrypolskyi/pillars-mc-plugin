@@ -14,7 +14,7 @@ These are constraints the current code enforces or relies upon. They describe to
 
 ### 2. At most one in-memory session is intended per arena world name
 
-**Invariant:** `GameSessionManager` stores sessions in a map keyed by `arena.getWorldName()` and creates them lazily with `computeIfAbsent`.
+**Invariant:** `GameSessionManager` stores sessions in a map keyed by `arena.getWorldName()`. It creates sessions for arenas ready at manager construction and uses `computeIfAbsent` when an asynchronously prepared arena is first accessed later.
 
 **Why it matters:** All membership, tasks, event state, and winner decisions for an arena must converge on one coordinator.
 
@@ -40,11 +40,13 @@ These are constraints the current code enforces or relies upon. They describe to
 
 ### 5. An active pregame player owns one occupied spawn
 
-**Invariant:** Join allocates one unoccupied configured spawn and records it by UUID. Pregame leave removes that assignment and clears its generated pillar.
+**Invariant:** Join allocates one unoccupied configured spawn and records it by UUID. Before constructing the temporary pillar, the exact `BlockData` of every replaced location is captured. Pregame leave removes the assignment and restores that captured data.
 
 **Why it matters:** Capacity, teleport position, freeze, and pillar preparation are coupled to this mapping.
 
-**Depends on it:** `SpawnManager`, `GameSession.joinPlayer()`, `removePlayer()`, match start.
+**Depends on it:** `SpawnManager`, `SessionPlayerService`, `GameSession.joinPlayer()`, `removePlayer()`, match start, and shutdown.
+
+**Enforcement:** `GameSession` stores one original-block map per participant UUID. A full match reset may discard those snapshots only because the entire arena world is replaced from the template.
 
 ### 6. Joinable session states are only WAITING and STARTING
 
@@ -66,6 +68,14 @@ These are constraints the current code enforces or relies upon. They describe to
 
 **Enforcement:** Health normalization and restoration are capped to the current maximum health. Lobby entry does not normalize player state, and lobby action items use free slots rather than overwriting occupied slots.
 
+### 6b. Player and administrator arena cards share their characteristics
+
+**Invariant:** `/p menu` and the administrative arena list build their common arena-description lore through `ArenaMenuItemFactory.arenaDetailsLore(...)`.
+
+**Why it matters:** Capacity, state, joining availability, player count, minimum start count, item interval, platform settings, game mode, and delivery mode must not drift between two views of the same arena.
+
+**Depends on it:** `ArenaMenu`, `AdminArenaListMenu`, and `ArenaMenuItemFactory`.
+
 ## Lifecycle
 
 ### 7. A normal countdown requires the configured minimum
@@ -86,15 +96,23 @@ These are constraints the current code enforces or relies upon. They describe to
 
 **Enforcement:** The countdown uses `STARTING`; `GameState` contains no separate countdown value.
 
-### 9. Match mode and item interval are snapshotted at RUNNING transition
+### 9. Match-bound arena settings are snapshotted at RUNNING transition
 
-**Invariant:** `activeGameMode` and the item distribution interval are copied from the arena when a match starts.
+**Invariant:** One immutable `ArenaMatchSettings` captures game mode, item-delivery mode, item interval, and border duration from the arena when a match starts.
 
-**Why it matters:** Pillar preparation, Lucky Block tracking, and the distribution schedule use a stable match mode/period.
+**Why it matters:** Pillar preparation, Lucky Block tracking, distribution behavior, HUD output, and border scheduling must agree for the entire match even if an administrator edits the arena.
 
-**Depends on it:** `GameSession.startGame()`, Lucky Block listeners/outcomes, distribution task.
+**Depends on it:** `GameSession.startBeginGameCountdown()`, `ArenaMatchSettings`, `SessionWorldBorderController`, Lucky Block listeners/outcomes, and the distribution task.
 
-**Enforcement gap:** Item delivery mode is not snapshotted and may change during the match.
+**Enforcement:** The snapshot is created immediately before the transition to `RUNNING` and cleared with session state. Admin writes continue updating the arena/YAML but are not reread by the active match.
+
+### 9a. Configuration lifetime has one explicit owner per category
+
+**Invariant:** Startup lifecycle/event/per-tick floor-budget values come only from `StartupSettings`; match-bound arena values come only from `ArenaMatchSettings`; Lucky Block runtime and menu reads go through `LuckyBlockSettings`; floor/spawn drafts become live only after rebuild success.
+
+**Why it matters:** Existing and newly accessed sessions must not observe different values merely because they were created at different times, and a menu must not display a value that its runtime subsystem has independently cached.
+
+**Depends on it:** `PillarsPlugin`, `GameSessionManager`, `GameSession`, `GameEventManager`, `LuckyBlockOutcomeManager`, `AdminLuckyBlockMenu`, and `ArenaManager`.
 
 ### 10. Winner processing happens at most once per match
 
@@ -184,7 +202,23 @@ These are constraints the current code enforces or relies upon. They describe to
 
 **Depends on it:** `GameSession`, `SessionWorldBorderController`, `GameEventManager`, event implementations.
 
-**Enforcement gaps:** Some Lucky outcome tasks are global/untracked, and plugin disable has no centralized cleanup. See the audit.
+**Enforcement:** Session shutdown uses the same owned cancellation boundaries and also restores player, administrator-spectator, border, event, Lucky Block outcome, and pregame pillar state. Every delayed Lucky outcome cleanup task is registered by session and canceled during that session's direct cleanup; plugin disable retains an idempotent global fallback.
+
+### 19a. Plugin shutdown unwinds temporary state before persistence closes
+
+**Invariant:** Coordinated shutdown stops sessions first, cleans global Lucky Block effects, restores any remaining player snapshots, cancels floor/world activation queues, drains or rolls back arena rebuild work, and flushes YAML/statistics writers last. Each cleanup boundary is idempotent.
+
+**Why it matters:** Disabling or reloading must not leave player attributes, temporary blocks/entities/fluids, borders, staged arena directories, or unsaved counters owned by a plugin that is no longer running.
+
+**Depends on it:** `PillarsPlugin.onDisable()`, `GameSessionManager`, `GameSession`, `LuckyBlockOutcomeManager`, `PlayerManager`, `ArenaManager`, `ArenaFloorService`, `ArenaWorldService`, `AsyncYamlWriter`, and `StatsManager`.
+
+### 19b. Match border changes are reversible and cleanup is idempotent
+
+**Invariant:** Starting the match border captures its world, center, size, damage amount, damage buffer, warning distance, and warning time before mutation. Stopping restores that snapshot once; stopping a controller that never started or was already stopped does not modify the world border.
+
+**Why it matters:** Waiting-session cleanup must not overwrite template settings, and match completion, failed reset, manual reset, or plugin shutdown must not leave match-specific border properties in the arena world.
+
+**Depends on it:** `SessionWorldBorderController.start()`, `SessionWorldBorderController.stop()`, and every `GameSession.stopSessionTasks()` path.
 
 ## World and persistence
 
@@ -196,7 +230,23 @@ These are constraints the current code enforces or relies upon. They describe to
 
 **Depends on it:** `GameSession.evacuateArenaPlayers()`, `ArenaManager.loadArenas()`, and `ArenaWorldService.rebuild()`.
 
-**Enforcement:** `ArenaRebuildResult` carries failure to `GameSession`; only `SUCCESS` changes the session to `WAITING`. Failed sessions remain unavailable and retryable.
+**Enforcement:** `ArenaRebuildResult` carries failure to `GameSession`; only `SUCCESS` changes the session to `WAITING`. Failed sessions remain unavailable and retryable. During plugin shutdown the world service rejects new rebuilds, drains its filesystem executor, and rolls back any staged directory swap still waiting for main-thread activation.
+
+### 20a. An arena is unavailable until startup world and floor preparation completes
+
+**Invariant:** A configured arena is added to `ArenaManager` only after its directory copy, Bukkit world activation, configuration validation, and batched floor generation succeed.
+
+**Why it matters:** Joining a partially copied world or partially generated floor would expose invalid gameplay geometry and allow sessions to start against incomplete state.
+
+**Depends on it:** `ArenaManager.loadArenas()`, `ArenaWorldService.loadOrCreateAsync()`, `ArenaFloorService.generate()`, menus, quick join, and `GameSessionManager` fallback session creation.
+
+### 20b. Floor generation has a plugin-wide per-tick budget
+
+**Invariant:** All startup and reset floor jobs pass through one `ArenaFloorService` queue and together process no more than `floorColumnsPerTick` columns in one server tick.
+
+**Why it matters:** A maximum-radius floor can contain tens of thousands of columns; applying it in one callback can stall the server watchdog/tick loop.
+
+**Depends on it:** `ArenaFloorService`, `StartupSettings`, `ArenaManager`, and `ArenaWorldService`.
 
 ### 21. Item weights used for selection are positive
 
@@ -214,7 +264,23 @@ These are constraints the current code enforces or relies upon. They describe to
 
 **Depends on it:** `StatsManager`, `HudManager`, PlaceholderAPI expansion.
 
-**Enforcement gap:** The JSON write is non-atomic; a failure can violate durability even though in-memory counters remain valid.
+**Enforcement:** Counter access is locked. One writer serializes deep snapshots, coalesces repeated mutations, writes a sibling temporary file, and atomically replaces the durable file when supported. Shutdown schedules any remaining dirty state and waits for the writer to finish.
+
+### 22a. Runtime YAML persistence never performs file writes on the server thread
+
+**Invariant:** Runtime changes capture `config.yml` or `item-pools.yml` as strings on the main thread, then `AsyncYamlWriter` coalesces each target and performs temporary-file replacement on its single writer thread. Every coalesced request receives the result of the replacement, and Bukkit-facing completion work returns to the server thread.
+
+**Why it matters:** Administrative inventory clicks must not pause the server on disk latency, and interrupted writes must not truncate the durable YAML file.
+
+**Depends on it:** `AsyncYamlWriter`, `ArenaManager`, `GameSessionManager`, `ItemManager`, `LuckyBlockSettings`, and plugin shutdown.
+
+### 22b. Placeholder reads never traverse live session or Bukkit state
+
+**Invariant:** `GameSession` publishes an immutable member/value snapshot on the main thread, `GameSessionManager` publishes an immutable session list, and `ChroniclePlaceholderExpansion.onRequest()` reads only those snapshots plus locked statistics by UUID.
+
+**Why it matters:** TAB refreshes placeholders asynchronously by default. Reading Bukkit `Player` objects, session `HashMap`/`HashSet` collections, arena spawn lists, or translation YAML from that callback could race main-thread lifecycle changes.
+
+**Depends on it:** `GameSession.publishPlaceholderSnapshot()`, `GameSessionManager.getPlaceholderView()`, `ChroniclePlaceholderExpansion`, and `StatsManager.getStats()`.
 
 ### 23. Russian is the sole message language
 

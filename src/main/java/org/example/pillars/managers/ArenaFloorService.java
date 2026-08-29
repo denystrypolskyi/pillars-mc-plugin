@@ -1,14 +1,21 @@
 package org.example.pillars.managers;
 
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.scheduler.BukkitTask;
+import org.example.pillars.PillarsPlugin;
 import org.example.pillars.entities.Arena;
 import org.example.pillars.enums.FloorShape;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Set;
+import java.util.function.Consumer;
 
 /**
  * Owns arena-floor configuration rules and Bukkit block generation.
@@ -17,6 +24,16 @@ public final class ArenaFloorService {
     public static final int MIN_DISTANCE_BELOW_SPAWNS = 12;
     public static final int MAX_DISTANCE_BELOW_SPAWNS = 70;
     public static final int ELIMINATION_MARGIN = 8;
+    private final PillarsPlugin plugin;
+    private final int columnsPerTick;
+    private final Deque<FloorGeneration> pendingGenerations = new ArrayDeque<>();
+    private BukkitTask generationTask;
+    private boolean shuttingDown;
+
+    public ArenaFloorService(PillarsPlugin plugin, int columnsPerTick) {
+        this.plugin = plugin;
+        this.columnsPerTick = Math.max(32, columnsPerTick);
+    }
 
     public void loadSettings(Arena arena, ConfigurationSection section) {
         int defaultRadius = switch (arena.getSpawnPoints().size()) {
@@ -67,29 +84,96 @@ public final class ArenaFloorService {
                 || material == Material.WATER);
     }
 
-    public void generate(Arena arena) {
-        if (!arena.isFloorEnabled() || arena.getSpawnPoints().isEmpty()) return;
+    public void generate(Arena arena, Runnable onSuccess, Consumer<Throwable> onFailure) {
+        if (shuttingDown) return;
+        if (!arena.isFloorEnabled() || arena.getSpawnPoints().isEmpty()) {
+            onSuccess.run();
+            return;
+        }
 
         Location center = arena.getCenter();
         World world = center.getWorld();
-        if (world == null) return;
+        if (world == null) {
+            onFailure.accept(new IllegalStateException("Мир арены не загружен"));
+            return;
+        }
 
         int y = arena.getFloorY();
         Material material = arena.getFloorMaterial();
         boolean basin = material == Material.LAVA || material == Material.WATER;
         Set<Long> blocks = floorBlocks(arena, center.getBlockX(), center.getBlockZ());
 
-        for (long packed : blocks) {
-            int x = (int) (packed >> 32);
-            int z = (int) packed;
-            if (!basin) {
-                world.getBlockAt(x, y, z).setType(material, false);
+        pendingGenerations.addLast(new FloorGeneration(
+                world,
+                y,
+                material,
+                basin,
+                blocks,
+                blocks.iterator(),
+                onSuccess,
+                onFailure
+        ));
+        ensureGenerationTask();
+    }
+
+    public void shutdown() {
+        shuttingDown = true;
+        if (generationTask != null) {
+            generationTask.cancel();
+            generationTask = null;
+        }
+        pendingGenerations.clear();
+    }
+
+    private void ensureGenerationTask() {
+        if (generationTask != null) return;
+        generationTask = Bukkit.getScheduler().runTaskTimer(plugin, this::processGenerationBatch, 1L, 1L);
+    }
+
+    private void processGenerationBatch() {
+        int remainingColumns = columnsPerTick;
+        while (remainingColumns > 0 && !pendingGenerations.isEmpty()) {
+            FloorGeneration generation = pendingGenerations.getFirst();
+            try {
+                while (remainingColumns > 0 && generation.blocks().hasNext()) {
+                    applyColumn(generation, generation.blocks().next());
+                    remainingColumns--;
+                }
+            } catch (RuntimeException e) {
+                pendingGenerations.removeFirst();
+                generation.onFailure().accept(e);
                 continue;
             }
 
-            world.getBlockAt(x, y - 1, z).setType(Material.GLASS, false);
-            world.getBlockAt(x, y, z).setType(isFloorEdge(blocks, x, z) ? Material.GLASS : material, false);
+            if (!generation.blocks().hasNext()) {
+                pendingGenerations.removeFirst();
+                try {
+                    generation.onSuccess().run();
+                } catch (RuntimeException e) {
+                    generation.onFailure().accept(e);
+                }
+            }
         }
+
+        if (pendingGenerations.isEmpty() && generationTask != null) {
+            generationTask.cancel();
+            generationTask = null;
+        }
+    }
+
+    private void applyColumn(FloorGeneration generation, long packed) {
+        int x = (int) (packed >> 32);
+        int z = (int) packed;
+        if (!generation.basin()) {
+            generation.world().getBlockAt(x, generation.y(), z).setType(generation.material(), false);
+            return;
+        }
+
+        generation.world().getBlockAt(x, generation.y() - 1, z).setType(Material.GLASS, false);
+        generation.world().getBlockAt(x, generation.y(), z).setType(
+                isFloorEdge(generation.allBlocks(), x, z) ? Material.GLASS : generation.material(),
+                false
+        );
     }
 
     private int minimumSpawnY(Arena arena) {
@@ -138,4 +222,15 @@ public final class ArenaFloorService {
         }
         return false;
     }
+
+    private record FloorGeneration(
+            World world,
+            int y,
+            Material material,
+            boolean basin,
+            Set<Long> allBlocks,
+            Iterator<Long> blocks,
+            Runnable onSuccess,
+            Consumer<Throwable> onFailure
+    ) {}
 }

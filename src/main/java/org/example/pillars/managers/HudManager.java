@@ -676,6 +676,10 @@ public class HudManager {
         ));
     }
 
+    public void sendItemPoolsSaveFailed(Player player) {
+        player.sendMessage(translations.text("messages.item-pools-save-failed"));
+    }
+
     public void broadcastArenaJoiningChanged(Player player, Arena arena) {
         String key = arena.isJoiningOpen()
                 ? "messages.arena-joining-opened"

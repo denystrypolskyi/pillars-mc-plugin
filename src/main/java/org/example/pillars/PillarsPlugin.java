@@ -4,6 +4,9 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.permissions.Permission;
 import org.example.pillars.command.PillarsCommand;
+import org.example.pillars.config.LuckyBlockSettings;
+import org.example.pillars.config.StartupSettings;
+import org.example.pillars.config.AsyncYamlWriter;
 import org.example.pillars.listeners.GameSessionPlayerListener;
 import org.example.pillars.listeners.GuiListener;
 import org.example.pillars.listeners.LobbyListener;
@@ -12,17 +15,28 @@ import org.example.pillars.managers.*;
 import org.example.pillars.placeholders.ChroniclePlaceholderExpansion;
 
 public final class PillarsPlugin extends JavaPlugin {
+    private GameSessionManager gameSessionManager;
+    private LuckyBlockOutcomeManager luckyBlockOutcomeManager;
+    private PlayerManager playerManager;
+    private ArenaManager arenaManager;
+    private StatsManager statsManager;
+    private AsyncYamlWriter yamlWriter;
+
     @Override
     public void onEnable() {
         saveDefaultConfig();
+        StartupSettings startupSettings = StartupSettings.load(getConfig());
 
         TranslationManager translationManager = new TranslationManager(this);
+        yamlWriter = new AsyncYamlWriter(this, translationManager);
+        LuckyBlockSettings luckyBlockSettings = new LuckyBlockSettings(this, yamlWriter);
         TeleportManager teleportManager = new TeleportManager();
-        ItemManager itemManager = new ItemManager(this, translationManager);
-        LuckyBlockOutcomeManager luckyBlockOutcomeManager = new LuckyBlockOutcomeManager(
+        ItemManager itemManager = new ItemManager(this, translationManager, yamlWriter);
+        luckyBlockOutcomeManager = new LuckyBlockOutcomeManager(
                 this,
                 itemManager,
-                translationManager
+                translationManager,
+                luckyBlockSettings
         );
         SoundManager soundManager = new SoundManager();
         boolean tabEnabled = getServer().getPluginManager().isPluginEnabled("TAB");
@@ -30,23 +44,33 @@ public final class PillarsPlugin extends JavaPlugin {
         HudManager hudManager = new HudManager(translationManager, scoreboardService);
         SpawnManager spawnManager = new SpawnManager();
 
-        ArenaFloorService arenaFloorService = new ArenaFloorService();
+        ArenaFloorService arenaFloorService = new ArenaFloorService(
+                this,
+                startupSettings.session().floorColumnsPerTick()
+        );
         ArenaWorldService arenaWorldService = new ArenaWorldService(
                 this,
                 translationManager,
                 arenaFloorService
         );
-        ArenaManager arenaManager = new ArenaManager(
+        arenaManager = new ArenaManager(
                 this,
                 translationManager,
                 arenaFloorService,
-                arenaWorldService
+                arenaWorldService,
+                yamlWriter
         );
-        StatsManager statsManager = new StatsManager(this, translationManager);
+        statsManager = new StatsManager(this, translationManager);
 
-        PlayerManager playerManager = new PlayerManager(this, teleportManager, hudManager, statsManager);
+        playerManager = new PlayerManager(
+                this,
+                teleportManager,
+                hudManager,
+                statsManager,
+                startupSettings.session().lobbyWorldName()
+        );
 
-        GameSessionManager gameSessionManager = new GameSessionManager(
+        gameSessionManager = new GameSessionManager(
                 this,
                 hudManager,
                 playerManager,
@@ -55,7 +79,10 @@ public final class PillarsPlugin extends JavaPlugin {
                 soundManager,
                 teleportManager,
                 itemManager,
-                arenaManager
+                arenaManager,
+                startupSettings,
+                yamlWriter,
+                luckyBlockOutcomeManager
         );
 
         if (getServer().getPluginManager().isPluginEnabled("PlaceholderAPI")) {
@@ -108,6 +135,16 @@ public final class PillarsPlugin extends JavaPlugin {
         PillarsCommand commandExecutor = new PillarsCommand(arenaManager, gameSessionManager, hudManager, itemManager);
         pillarsCommand.setExecutor(commandExecutor);
         pillarsCommand.setTabCompleter(commandExecutor);
+    }
+
+    @Override
+    public void onDisable() {
+        if (gameSessionManager != null) gameSessionManager.shutdown();
+        if (luckyBlockOutcomeManager != null) luckyBlockOutcomeManager.shutdown();
+        if (playerManager != null) playerManager.shutdown();
+        if (arenaManager != null) arenaManager.shutdown();
+        if (yamlWriter != null) yamlWriter.shutdown();
+        if (statsManager != null) statsManager.shutdown();
     }
 
     private void setPermissionDescription(String permissionName, String description) {

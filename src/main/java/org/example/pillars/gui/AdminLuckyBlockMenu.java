@@ -10,7 +10,7 @@ import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
-import org.bukkit.plugin.java.JavaPlugin;
+import org.example.pillars.config.LuckyBlockSettings;
 import org.example.pillars.managers.ArenaManager;
 import org.example.pillars.managers.GameSessionManager;
 import org.example.pillars.managers.HudManager;
@@ -29,7 +29,7 @@ public final class AdminLuckyBlockMenu implements InventoryHolder {
     private final ArenaManager arenaManager;
     private final GameSessionManager gameSessionManager;
     private final TranslationManager translations;
-    private final JavaPlugin plugin;
+    private final LuckyBlockSettings settings;
     private final Inventory inventory;
 
     public AdminLuckyBlockMenu(
@@ -37,7 +37,8 @@ public final class AdminLuckyBlockMenu implements InventoryHolder {
             ItemManager itemManager,
             HudManager hudManager,
             ArenaManager arenaManager,
-            GameSessionManager gameSessionManager
+            GameSessionManager gameSessionManager,
+            LuckyBlockSettings settings
     ) {
         this.player = player;
         this.itemManager = itemManager;
@@ -45,7 +46,7 @@ public final class AdminLuckyBlockMenu implements InventoryHolder {
         this.arenaManager = arenaManager;
         this.gameSessionManager = gameSessionManager;
         this.translations = hudManager.getTranslations();
-        this.plugin = JavaPlugin.getProvidingPlugin(AdminLuckyBlockMenu.class);
+        this.settings = settings;
         this.inventory = Bukkit.createInventory(this, MENU_SIZE, translations.text("menus.lucky-blocks.title"));
         buildMenu();
     }
@@ -64,8 +65,7 @@ public final class AdminLuckyBlockMenu implements InventoryHolder {
                 translations.list("menus.lucky-blocks.info-lore")
         ));
 
-        int itemChance = Math.max(0, Math.min(100,
-                plugin.getConfig().getInt("settings.luckyBlocks.itemChancePercent", 85)));
+        int itemChance = settings.itemChancePercent();
         inventory.setItem(10, actionItem(
                 Material.CHEST,
                 translations.text("menus.lucky-blocks.item-chance"),
@@ -80,7 +80,7 @@ public final class AdminLuckyBlockMenu implements InventoryHolder {
         categoryControl(14, "neutral", Material.WATER_BUCKET, "neutralPercent", 3);
         categoryControl(16, "bad", Material.TNT, "badPercent", 5);
 
-        boolean blockDamage = plugin.getConfig().getBoolean("settings.luckyBlocks.tntBlockDamage", false);
+        boolean blockDamage = settings.tntBlockDamage();
         inventory.setItem(26, actionItem(
                 blockDamage ? Material.TNT : Material.GRAY_DYE,
                 translations.text("menus.lucky-blocks.tnt-damage"),
@@ -95,7 +95,7 @@ public final class AdminLuckyBlockMenu implements InventoryHolder {
     }
 
     private void categoryControl(int slot, String category, Material icon, String configKey, int fallback) {
-        int weight = Math.max(0, plugin.getConfig().getInt("settings.luckyBlocks.categories." + configKey, fallback));
+        int weight = chance(configKey, fallback);
         inventory.setItem(slot, actionItem(
                 icon,
                 translations.text("menus.lucky-blocks.categories." + category),
@@ -129,9 +129,7 @@ public final class AdminLuckyBlockMenu implements InventoryHolder {
             return;
         }
         if (action.equals("toggle_tnt_damage")) {
-            boolean enabled = !plugin.getConfig().getBoolean("settings.luckyBlocks.tntBlockDamage", false);
-            plugin.getConfig().set("settings.luckyBlocks.tntBlockDamage", enabled);
-            plugin.saveConfig();
+            settings.setTntBlockDamage(!settings.tntBlockDamage());
             buildMenu();
             return;
         }
@@ -192,16 +190,17 @@ public final class AdminLuckyBlockMenu implements InventoryHolder {
             }
         }
 
-        plugin.getConfig().set("settings.luckyBlocks.itemChancePercent", item);
-        plugin.getConfig().set("settings.luckyBlocks.categories.goodPercent", good);
-        plugin.getConfig().set("settings.luckyBlocks.categories.neutralPercent", neutral);
-        plugin.getConfig().set("settings.luckyBlocks.categories.badPercent", bad);
-        plugin.saveConfig();
+        settings.setChances(item, good, neutral, bad);
     }
 
     private int chance(String relativePath, int fallback) {
-        String path = "settings.luckyBlocks." + relativePath;
-        return Math.max(0, Math.min(100, plugin.getConfig().getInt(path, fallback)));
+        return switch (relativePath) {
+            case "itemChancePercent" -> settings.itemChancePercent();
+            case "categories.goodPercent", "goodPercent" -> settings.goodChancePercent();
+            case "categories.neutralPercent", "neutralPercent" -> settings.neutralChancePercent();
+            case "categories.badPercent", "badPercent" -> settings.badChancePercent();
+            default -> Math.max(0, Math.min(100, fallback));
+        };
     }
 
     private ItemStack actionItem(Material material, String name, List<String> lore, String action) {

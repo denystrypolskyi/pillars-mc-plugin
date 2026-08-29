@@ -29,8 +29,10 @@ import org.bukkit.inventory.meta.FireworkMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
+import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Vector;
 import org.example.pillars.GameSession;
+import org.example.pillars.config.LuckyBlockSettings;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -45,20 +47,40 @@ import java.util.concurrent.ThreadLocalRandom;
 
 public final class LuckyBlockOutcomeManager implements Listener {
     private final JavaPlugin plugin;
+    private final LuckyBlockSettings settings;
     private final LuckyBlockEffectService effects;
 
-    public LuckyBlockOutcomeManager(JavaPlugin plugin, ItemManager itemManager, TranslationManager translations) {
+    public LuckyBlockOutcomeManager(
+            JavaPlugin plugin,
+            ItemManager itemManager,
+            TranslationManager translations,
+            LuckyBlockSettings settings
+    ) {
         this.plugin = plugin;
+        this.settings = settings;
         this.effects = new LuckyBlockEffectService(
                 plugin,
                 itemManager,
                 translations,
-                new LuckyBlockOutcomeSelector(plugin)
+                settings,
+                new LuckyBlockOutcomeSelector(settings)
         );
     }
 
     public void trigger(Player player, Location blockLocation, GameSession session) {
         effects.trigger(player, blockLocation, session);
+    }
+
+    public void shutdown() {
+        effects.cleanupAll();
+    }
+
+    public void cleanupSession(GameSession session) {
+        effects.cleanupSession(session);
+    }
+
+    public LuckyBlockSettings getSettings() {
+        return settings;
     }
 
     @EventHandler(ignoreCancelled = true)
@@ -78,7 +100,7 @@ public final class LuckyBlockOutcomeManager implements Listener {
 
     @EventHandler
     public void onPluginDisable(PluginDisableEvent event) {
-        if (event.getPlugin() == plugin) effects.cleanupAll();
+        if (event.getPlugin() == plugin) shutdown();
     }
 }
 
@@ -93,24 +115,29 @@ final class LuckyBlockEffectService {
     private final JavaPlugin plugin;
     private final ItemManager itemManager;
     private final TranslationManager translations;
+    private final LuckyBlockSettings settings;
     private final LuckyBlockOutcomeSelector selector;
     private final Map<GameSession, Set<UUID>> spawnedEntities = new HashMap<>();
     private final Set<UUID> luckyExplosives = new HashSet<>();
     private final Map<Location, TemporaryFluid> fluidBlocks = new HashMap<>();
     private final Set<TemporaryFluid> activeFluids = new HashSet<>();
     private final Set<TemporaryBlocks> activeTemporaryBlocks = new HashSet<>();
+    private final Map<GameSession, Set<BukkitTask>> delayedTasks = new HashMap<>();
+    private BukkitTask cleanupTask;
 
     LuckyBlockEffectService(
             JavaPlugin plugin,
             ItemManager itemManager,
             TranslationManager translations,
+            LuckyBlockSettings settings,
             LuckyBlockOutcomeSelector selector
     ) {
         this.plugin = plugin;
         this.itemManager = itemManager;
         this.translations = translations;
+        this.settings = settings;
         this.selector = selector;
-        Bukkit.getScheduler().runTaskTimer(plugin, this::cleanupEndedSessions, 20L, 20L);
+        cleanupTask = Bukkit.getScheduler().runTaskTimer(plugin, this::cleanupEndedSessions, 20L, 20L);
     }
 
     public void trigger(Player player, Location blockLocation, GameSession session) {
@@ -130,7 +157,7 @@ final class LuckyBlockEffectService {
 
     public void onLuckyTntExplode(EntityExplodeEvent event) {
         if (!luckyExplosives.remove(event.getEntity().getUniqueId())) return;
-        if (!plugin.getConfig().getBoolean("settings.luckyBlocks.tntBlockDamage", false)) {
+        if (!settings.tntBlockDamage()) {
             event.blockList().clear();
         }
     }
@@ -175,7 +202,7 @@ final class LuckyBlockEffectService {
                     center(location),
                     explosionPower(),
                     false,
-                    plugin.getConfig().getBoolean("settings.luckyBlocks.tntBlockDamage", false),
+                    settings.tntBlockDamage(),
                     player
             );
             case LIGHTNING -> {
@@ -289,7 +316,7 @@ final class LuckyBlockEffectService {
 
         TemporaryBlocks temporary = new TemporaryBlocks(session, Material.COBWEB, locations);
         activeTemporaryBlocks.add(temporary);
-        Bukkit.getScheduler().runTaskLater(plugin, () -> cleanupTemporaryBlocks(temporary), 100L);
+        schedule(session, () -> cleanupTemporaryBlocks(temporary), 100L);
     }
 
     private void spawnCreeper(Location location, GameSession session) {
@@ -318,22 +345,28 @@ final class LuckyBlockEffectService {
     }
 
     private void track(Entity entity, GameSession session) {
-        spawnedEntities.computeIfAbsent(session, ignored -> new HashSet<>()).add(entity.getUniqueId());
-        long lifetime = Math.max(20L, plugin.getConfig().getLong("settings.luckyBlocks.mobDurationTicks", 400L));
-        Bukkit.getScheduler().runTaskLater(plugin, () -> removeTracked(entity, session), lifetime);
+        UUID entityId = entity.getUniqueId();
+        spawnedEntities.computeIfAbsent(session, ignored -> new HashSet<>()).add(entityId);
+        long lifetime = settings.mobDurationTicks();
+        schedule(session, () -> removeTracked(entityId, session), lifetime);
     }
 
-    private void removeTracked(Entity entity, GameSession session) {
+    private void removeTracked(UUID entityId, GameSession session) {
         Set<UUID> entities = spawnedEntities.get(session);
-        if (entities != null) entities.remove(entity.getUniqueId());
-        luckyExplosives.remove(entity.getUniqueId());
+        if (entities != null) {
+            entities.remove(entityId);
+            if (entities.isEmpty()) spawnedEntities.remove(session);
+        }
+        luckyExplosives.remove(entityId);
+        Entity entity = Bukkit.getEntity(entityId);
+        if (entity == null) return;
         if (entity.isValid()) entity.remove();
     }
 
     private void spawnTnt(Player player, Location location, GameSession session, int extraFuseTicks) {
         Location spawn = center(location).add(randomInt(-2, 3) * 0.45, 3.0 + randomInt(0, 4), randomInt(-2, 3) * 0.45);
         TNTPrimed tnt = location.getWorld().spawn(spawn, TNTPrimed.class);
-        tnt.setFuseTicks(Math.max(1, plugin.getConfig().getInt("settings.luckyBlocks.tntFuseTicks", 60) + extraFuseTicks));
+        tnt.setFuseTicks(Math.max(1, settings.tntFuseTicks() + extraFuseTicks));
         tnt.setYield(explosionPower());
         tnt.setSource(player);
         luckyExplosives.add(tnt.getUniqueId());
@@ -348,8 +381,8 @@ final class LuckyBlockEffectService {
         fluidBlocks.put(source, fluid);
         source.getBlock().setType(material, true);
 
-        long duration = Math.max(20L, plugin.getConfig().getLong("settings.luckyBlocks.fluidDurationTicks", 100L));
-        Bukkit.getScheduler().runTaskLater(plugin, () -> cleanupFluid(fluid), duration);
+        long duration = settings.fluidDurationTicks();
+        schedule(session, () -> cleanupFluid(fluid), duration);
     }
 
     private void cleanupFluid(TemporaryFluid fluid) {
@@ -372,26 +405,42 @@ final class LuckyBlockEffectService {
     }
 
     private void cleanupEndedSessions() {
-        for (GameSession session : new HashSet<>(spawnedEntities.keySet())) {
-            if (session.isLuckyBlocksModeActive()) continue;
-            for (UUID entityId : spawnedEntities.getOrDefault(session, Set.of())) {
-                Entity entity = Bukkit.getEntity(entityId);
-                if (entity != null) entity.remove();
-                luckyExplosives.remove(entityId);
-            }
-            spawnedEntities.remove(session);
-            selector.forget(session);
+        Set<GameSession> sessions = new HashSet<>(spawnedEntities.keySet());
+        sessions.addAll(delayedTasks.keySet());
+        for (TemporaryFluid fluid : activeFluids) sessions.add(fluid.session());
+        for (TemporaryBlocks blocks : activeTemporaryBlocks) sessions.add(blocks.session());
+        for (GameSession session : sessions) {
+            if (!session.isLuckyBlocksModeActive()) cleanupSession(session);
         }
         selector.forgetEndedSessions();
+    }
+
+    void cleanupSession(GameSession session) {
+        cancelDelayedTasks(session);
+        for (UUID entityId : spawnedEntities.getOrDefault(session, Set.of())) {
+            Entity entity = Bukkit.getEntity(entityId);
+            if (entity != null) entity.remove();
+            luckyExplosives.remove(entityId);
+        }
+        spawnedEntities.remove(session);
         for (TemporaryFluid fluid : new HashSet<>(activeFluids)) {
-            if (!fluid.session().isLuckyBlocksModeActive()) cleanupFluid(fluid);
+            if (fluid.session() == session) cleanupFluid(fluid);
         }
         for (TemporaryBlocks blocks : new HashSet<>(activeTemporaryBlocks)) {
-            if (!blocks.session().isLuckyBlocksModeActive()) cleanupTemporaryBlocks(blocks);
+            if (blocks.session() == session) cleanupTemporaryBlocks(blocks);
         }
+        selector.forget(session);
     }
 
     void cleanupAll() {
+        if (cleanupTask != null) {
+            cleanupTask.cancel();
+            cleanupTask = null;
+        }
+        for (Set<BukkitTask> tasks : delayedTasks.values()) {
+            for (BukkitTask task : tasks) task.cancel();
+        }
+        delayedTasks.clear();
         for (Set<UUID> entityIds : spawnedEntities.values()) {
             for (UUID entityId : entityIds) {
                 Entity entity = Bukkit.getEntity(entityId);
@@ -401,12 +450,35 @@ final class LuckyBlockEffectService {
         for (TemporaryFluid fluid : new HashSet<>(activeFluids)) cleanupFluid(fluid);
         for (TemporaryBlocks blocks : new HashSet<>(activeTemporaryBlocks)) cleanupTemporaryBlocks(blocks);
         spawnedEntities.clear();
+        fluidBlocks.clear();
+        activeFluids.clear();
+        activeTemporaryBlocks.clear();
         selector.clear();
         luckyExplosives.clear();
     }
 
+    private void schedule(GameSession session, Runnable action, long delayTicks) {
+        SessionDelayedTask delayedTask = new SessionDelayedTask(session, action);
+        BukkitTask task = Bukkit.getScheduler().runTaskLater(plugin, delayedTask, delayTicks);
+        delayedTask.bind(task);
+        delayedTasks.computeIfAbsent(session, ignored -> new HashSet<>()).add(task);
+    }
+
+    private void cancelDelayedTasks(GameSession session) {
+        Set<BukkitTask> tasks = delayedTasks.remove(session);
+        if (tasks == null) return;
+        for (BukkitTask task : tasks) task.cancel();
+    }
+
+    private void untrack(GameSession session, BukkitTask task) {
+        Set<BukkitTask> tasks = delayedTasks.get(session);
+        if (tasks == null) return;
+        tasks.remove(task);
+        if (tasks.isEmpty()) delayedTasks.remove(session);
+    }
+
     private float explosionPower() {
-        return (float) Math.max(0.0, plugin.getConfig().getDouble("settings.luckyBlocks.explosionPower", 2.0));
+        return settings.explosionPower();
     }
 
     private EntityType randomType(List<EntityType> types) {
@@ -423,6 +495,30 @@ final class LuckyBlockEffectService {
 
     private Location above(Location location) {
         return location.getBlock().getLocation().add(0.5, 1.0, 0.5);
+    }
+
+    private final class SessionDelayedTask implements Runnable {
+        private final GameSession session;
+        private final Runnable action;
+        private BukkitTask task;
+
+        private SessionDelayedTask(GameSession session, Runnable action) {
+            this.session = session;
+            this.action = action;
+        }
+
+        private void bind(BukkitTask task) {
+            this.task = task;
+        }
+
+        @Override
+        public void run() {
+            try {
+                action.run();
+            } finally {
+                untrack(session, task);
+            }
+        }
     }
 
     enum LuckyCategory {
@@ -510,19 +606,19 @@ final class LuckyBlockEffectService {
 }
 
 final class LuckyBlockOutcomeSelector {
-    private final JavaPlugin plugin;
+    private final LuckyBlockSettings settings;
     private final Map<GameSession, Map<UUID, Deque<LuckyBlockEffectService.LuckyOutcome>>> recentOutcomes =
             new HashMap<>();
 
-    LuckyBlockOutcomeSelector(JavaPlugin plugin) {
-        this.plugin = plugin;
+    LuckyBlockOutcomeSelector(LuckyBlockSettings settings) {
+        this.settings = settings;
     }
 
     LuckyBlockEffectService.LuckyOutcome select(Player player, GameSession session) {
-        int itemChance = boundedPercent("settings.luckyBlocks.itemChancePercent", 85);
-        int good = boundedPercent("settings.luckyBlocks.categories.goodPercent", 7);
-        int neutral = boundedPercent("settings.luckyBlocks.categories.neutralPercent", 3);
-        int bad = boundedPercent("settings.luckyBlocks.categories.badPercent", 5);
+        int itemChance = settings.itemChancePercent();
+        int good = settings.goodChancePercent();
+        int neutral = settings.neutralChancePercent();
+        int bad = settings.badChancePercent();
         int total = itemChance + good + neutral + bad;
         if (total <= 0) return LuckyBlockEffectService.LuckyOutcome.RANDOM_ITEM;
 
@@ -543,8 +639,7 @@ final class LuckyBlockOutcomeSelector {
     }
 
     void remember(Player player, GameSession session, LuckyBlockEffectService.LuckyOutcome outcome) {
-        int historySize = Math.max(0, Math.min(10,
-                plugin.getConfig().getInt("settings.luckyBlocks.antiRepeatHistorySize", 4)));
+        int historySize = settings.antiRepeatHistorySize();
         if (historySize == 0) return;
         Deque<LuckyBlockEffectService.LuckyOutcome> recent = recentOutcomes
                 .computeIfAbsent(session, ignored -> new HashMap<>())
@@ -590,7 +685,4 @@ final class LuckyBlockOutcomeSelector {
         return candidates.getFirst();
     }
 
-    private int boundedPercent(String path, int fallback) {
-        return Math.max(0, Math.min(100, plugin.getConfig().getInt(path, fallback)));
-    }
 }

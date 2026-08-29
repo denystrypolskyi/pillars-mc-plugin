@@ -9,6 +9,7 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.example.pillars.config.AsyncYamlWriter;
 
 import java.io.File;
 import java.util.ArrayDeque;
@@ -18,12 +19,16 @@ import java.util.Map;
 import java.util.Deque;
 import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 
 public class ItemManager {
     private final Random random = new Random();
     private final JavaPlugin plugin;
     private final TranslationManager translations;
+    private final AsyncYamlWriter yamlWriter;
     private final File itemPoolsFile;
+    private final YamlConfiguration itemPoolsConfiguration;
     private final NamespacedKey hotbarItemKey;
     private final NamespacedKey luckyBlockItemKey;
     private int legendaryPercent;
@@ -34,22 +39,27 @@ public class ItemManager {
     private Map<Material, Integer> legendaryItems;
     private final Map<UUID, Deque<Material>> recentPlayerItems = new HashMap<>();
 
-    public ItemManager(JavaPlugin plugin, TranslationManager translations) {
+    public ItemManager(JavaPlugin plugin, TranslationManager translations, AsyncYamlWriter yamlWriter) {
         this.plugin = plugin;
         this.translations = translations;
+        this.yamlWriter = yamlWriter;
         this.itemPoolsFile = new File(plugin.getDataFolder(), "item-pools.yml");
         this.hotbarItemKey = new NamespacedKey(plugin, "hotbar_mode_item");
         this.luckyBlockItemKey = new NamespacedKey(plugin, "lucky_block_item");
         saveDefaultItemPools();
-        migrateLegacyConfigItemPools();
-        reloadConfigValues();
+        this.itemPoolsConfiguration = YamlConfiguration.loadConfiguration(itemPoolsFile);
+        migrateLegacyConfigItemPools(itemPoolsConfiguration);
+        reloadConfigValues(itemPoolsConfiguration);
     }
 
     public void reloadConfigValues() {
+        reloadConfigValues(itemPoolsConfiguration);
+    }
+
+    private void reloadConfigValues(YamlConfiguration itemPools) {
         this.legendaryPercent = Math.max(0, Math.min(100, plugin.getConfig().getInt("settings.itemRarity.legendaryPercent", 5)));
         this.rarePercent = Math.max(0, Math.min(100 - legendaryPercent, plugin.getConfig().getInt("settings.itemRarity.rarePercent", 15)));
         this.antiRepeatHistorySize = Math.max(0, Math.min(12, plugin.getConfig().getInt("settings.itemRarity.antiRepeatHistorySize", 4)));
-        YamlConfiguration itemPools = YamlConfiguration.loadConfiguration(itemPoolsFile);
         this.commonItems = loadItemPool(itemPools, "common");
         this.rareItems = loadItemPool(itemPools, "rare");
         this.legendaryItems = loadItemPool(itemPools, "legendary");
@@ -183,41 +193,39 @@ public class ItemManager {
 
         plugin.getConfig().set("settings.itemRarity.legendaryPercent", this.legendaryPercent);
         plugin.getConfig().set("settings.itemRarity.rarePercent", this.rarePercent);
-        plugin.saveConfig();
+        yamlWriter.savePluginConfig();
     }
 
-    public boolean setCustomItemWeight(String rarity, Material material, int weight) {
+    public boolean setCustomItemWeight(String rarity, Material material, int weight, Consumer<Boolean> completion) {
         String normalizedRarity = normalizeRarity(rarity);
-        if (normalizedRarity == null || material == null || weight <= 0) {
+        if (normalizedRarity == null || material == null || weight <= 0 || completion == null) {
             return false;
         }
 
-        YamlConfiguration itemPools = YamlConfiguration.loadConfiguration(itemPoolsFile);
-        itemPools.set(normalizedRarity + "." + material.name(), weight);
-        saveItemPools(itemPools);
-        reloadConfigValues();
+        itemPoolsConfiguration.set(normalizedRarity + "." + material.name(), weight);
+        notifySaveCompletion(saveItemPools(itemPoolsConfiguration), completion);
+        reloadConfigValues(itemPoolsConfiguration);
         return true;
     }
 
-    public boolean addItemWithDefaultWeight(String rarity, Material material) {
+    public boolean addItemWithDefaultWeight(String rarity, Material material, Consumer<Boolean> completion) {
         int weight = getDefaultWeight(rarity);
         if (weight <= 0) {
             return false;
         }
 
-        return setCustomItemWeight(rarity, material, weight);
+        return setCustomItemWeight(rarity, material, weight, completion);
     }
 
-    public boolean removeItem(String rarity, Material material) {
+    public boolean removeItem(String rarity, Material material, Consumer<Boolean> completion) {
         String normalizedRarity = normalizeRarity(rarity);
-        if (normalizedRarity == null || material == null) {
+        if (normalizedRarity == null || material == null || completion == null) {
             return false;
         }
 
-        YamlConfiguration itemPools = YamlConfiguration.loadConfiguration(itemPoolsFile);
-        itemPools.set(normalizedRarity + "." + material.name(), 0);
-        saveItemPools(itemPools);
-        reloadConfigValues();
+        itemPoolsConfiguration.set(normalizedRarity + "." + material.name(), 0);
+        notifySaveCompletion(saveItemPools(itemPoolsConfiguration), completion);
+        reloadConfigValues(itemPoolsConfiguration);
         return true;
     }
 
@@ -302,13 +310,12 @@ public class ItemManager {
         }
     }
 
-    private void migrateLegacyConfigItemPools() {
+    private void migrateLegacyConfigItemPools(YamlConfiguration itemPools) {
         ConfigurationSection legacyPools = plugin.getConfig().getConfigurationSection("settings.itemPools");
         if (legacyPools == null) {
             return;
         }
 
-        YamlConfiguration itemPools = YamlConfiguration.loadConfiguration(itemPoolsFile);
         for (String rarity : legacyPools.getKeys(false)) {
             ConfigurationSection legacyPool = legacyPools.getConfigurationSection(rarity);
             if (legacyPool == null) {
@@ -322,18 +329,18 @@ public class ItemManager {
 
         saveItemPools(itemPools);
         plugin.getConfig().set("settings.itemPools", null);
-        plugin.saveConfig();
+        yamlWriter.savePluginConfig();
     }
 
-    private void saveItemPools(YamlConfiguration itemPools) {
-        try {
-            itemPools.save(itemPoolsFile);
-        } catch (Exception e) {
-            plugin.getLogger().severe(translations.text(
-                    "logs.item-pools-save-failed",
-                    "error", e.getMessage()
-            ));
-        }
+    private CompletableFuture<Boolean> saveItemPools(YamlConfiguration itemPools) {
+        return yamlWriter.save(itemPoolsFile.toPath(), itemPools);
+    }
+
+    private void notifySaveCompletion(CompletableFuture<Boolean> result, Consumer<Boolean> completion) {
+        result.whenComplete((saved, error) -> plugin.getServer().getScheduler().runTask(
+                plugin,
+                () -> completion.accept(error == null && Boolean.TRUE.equals(saved))
+        ));
     }
 
     public String normalizeRarity(String rarity) {

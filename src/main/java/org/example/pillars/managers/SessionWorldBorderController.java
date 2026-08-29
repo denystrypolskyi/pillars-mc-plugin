@@ -10,9 +10,10 @@ import org.example.pillars.entities.Arena;
 import org.example.pillars.gameevents.GameEventManager;
 
 import java.util.List;
+import java.util.UUID;
 
 /**
- * Owns one session's border geometry, shrink task, Last Breath handoff, and reset mutation.
+ * Owns one session's border geometry, shrink task, Last Breath handoff, and restoration.
  */
 public final class SessionWorldBorderController {
     private final JavaPlugin plugin;
@@ -25,6 +26,7 @@ public final class SessionWorldBorderController {
     private BukkitTask lastBreathDelayTask;
     private long shrinkEndTimeMillis = -1L;
     private double blocksPerSecond;
+    private BorderSnapshot originalBorder;
 
     public SessionWorldBorderController(
             JavaPlugin plugin,
@@ -40,7 +42,7 @@ public final class SessionWorldBorderController {
         this.spawnPaddingBlocks = spawnPaddingBlocks;
     }
 
-    public void start() {
+    public void start(int shrinkSeconds) {
         List<Location> spawns = arena.getSpawnPoints();
         if (spawns.isEmpty()) return;
 
@@ -71,6 +73,11 @@ public final class SessionWorldBorderController {
 
         double initialSize = Math.max(minimumSize, (maxAxisDistance + spawnPaddingBlocks) * 2);
         WorldBorder border = world.getWorldBorder();
+        if (originalBorder != null) {
+            stop();
+            border = world.getWorldBorder();
+        }
+        originalBorder = BorderSnapshot.capture(world, border);
         border.setCenter(new Location(world, averageX, averageY, averageZ));
         border.setSize(initialSize);
         border.setDamageAmount(1.0);
@@ -78,7 +85,6 @@ public final class SessionWorldBorderController {
         border.setWarningDistance(0);
         border.setWarningTime(0);
 
-        long shrinkSeconds = arena.getBorderShrinkSeconds();
         shrinkEndTimeMillis = System.currentTimeMillis() + (shrinkSeconds * 1000L);
         blocksPerSecond = Math.max(0.0, (initialSize - minimumSize) / shrinkSeconds);
         startShrink(border);
@@ -95,15 +101,14 @@ public final class SessionWorldBorderController {
         shrinkEndTimeMillis = -1L;
         blocksPerSecond = 0.0;
 
-        if (arena.getSpawnPoints().isEmpty()) return;
-        World world = arena.getSpawnPoints().getFirst().getWorld();
+        BorderSnapshot snapshot = originalBorder;
+        originalBorder = null;
+        if (snapshot == null) return;
+
+        World world = Bukkit.getWorld(snapshot.worldId());
         if (world == null) return;
 
-        WorldBorder border = world.getWorldBorder();
-        border.setSize(1000);
-        border.setCenter(new Location(world, 0, 64, 0));
-        border.setDamageAmount(0.2);
-        border.setDamageBuffer(5);
+        snapshot.restore(world.getWorldBorder());
     }
 
     public double getCurrentSize() {
@@ -152,6 +157,40 @@ public final class SessionWorldBorderController {
         if (shrinkTask != null) {
             shrinkTask.cancel();
             shrinkTask = null;
+        }
+    }
+
+    private record BorderSnapshot(
+            UUID worldId,
+            double centerX,
+            double centerZ,
+            double size,
+            double damageAmount,
+            double damageBuffer,
+            int warningDistance,
+            int warningTime
+    ) {
+        private static BorderSnapshot capture(World world, WorldBorder border) {
+            Location center = border.getCenter();
+            return new BorderSnapshot(
+                    world.getUID(),
+                    center.getX(),
+                    center.getZ(),
+                    border.getSize(),
+                    border.getDamageAmount(),
+                    border.getDamageBuffer(),
+                    border.getWarningDistance(),
+                    border.getWarningTime()
+            );
+        }
+
+        private void restore(WorldBorder border) {
+            border.setCenter(centerX, centerZ);
+            border.setSize(size);
+            border.setDamageAmount(damageAmount);
+            border.setDamageBuffer(damageBuffer);
+            border.setWarningDistance(warningDistance);
+            border.setWarningTime(warningTime);
         }
     }
 }

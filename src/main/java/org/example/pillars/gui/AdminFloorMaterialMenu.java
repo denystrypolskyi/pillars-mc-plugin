@@ -56,6 +56,7 @@ public final class AdminFloorMaterialMenu implements InventoryHolder {
     private final Inventory inventory;
     private final List<Material> materials;
     private final int page;
+    private final int arenaListPage;
 
     public AdminFloorMaterialMenu(
             Player player,
@@ -65,7 +66,19 @@ public final class AdminFloorMaterialMenu implements InventoryHolder {
             HudManager hudManager,
             Arena arena
     ) {
-        this(player, arenaManager, gameSessionManager, itemManager, hudManager, arena, 0);
+        this(player, arenaManager, gameSessionManager, itemManager, hudManager, arena, 0, 0);
+    }
+
+    public AdminFloorMaterialMenu(
+            Player player,
+            ArenaManager arenaManager,
+            GameSessionManager gameSessionManager,
+            ItemManager itemManager,
+            HudManager hudManager,
+            Arena arena,
+            int arenaListPage
+    ) {
+        this(player, arenaManager, gameSessionManager, itemManager, hudManager, arena, arenaListPage, 0);
     }
 
     private AdminFloorMaterialMenu(
@@ -75,6 +88,7 @@ public final class AdminFloorMaterialMenu implements InventoryHolder {
             ItemManager itemManager,
             HudManager hudManager,
             Arena arena,
+            int arenaListPage,
             int requestedPage
     ) {
         this.player = player;
@@ -83,6 +97,7 @@ public final class AdminFloorMaterialMenu implements InventoryHolder {
         this.itemManager = itemManager;
         this.hudManager = hudManager;
         this.arena = arena;
+        this.arenaListPage = Math.max(0, arenaListPage);
         this.translations = hudManager.getTranslations();
         this.materials = availableMaterials();
         int maximumPage = Math.max(0, (materials.size() - 1) / PAGE_SIZE);
@@ -166,7 +181,9 @@ public final class AdminFloorMaterialMenu implements InventoryHolder {
                         arenaManager.getArenaFloorRadius(arena),
                         arenaManager.getArenaFloorY(arena)
                 );
-                new AdminArenaFloorMenu(clicker, arenaManager, gameSessionManager, itemManager, hudManager, arena).open();
+                new AdminArenaFloorMenu(
+                        clicker, arenaManager, gameSessionManager, itemManager, hudManager, arena, arenaListPage
+                ).open();
             }
             return;
         }
@@ -174,7 +191,9 @@ public final class AdminFloorMaterialMenu implements InventoryHolder {
         String action = meta.getPersistentDataContainer().get(ACTION_KEY, PersistentDataType.STRING);
         if (action == null) return;
         if (action.equals("back")) {
-            new AdminArenaFloorMenu(clicker, arenaManager, gameSessionManager, itemManager, hudManager, arena).open();
+            new AdminArenaFloorMenu(
+                    clicker, arenaManager, gameSessionManager, itemManager, hudManager, arena, arenaListPage
+            ).open();
             return;
         }
         if (action.startsWith("page:")) {
@@ -187,6 +206,7 @@ public final class AdminFloorMaterialMenu implements InventoryHolder {
                         itemManager,
                         hudManager,
                         arena,
+                        arenaListPage,
                         targetPage
                 ).open();
             } catch (NumberFormatException ignored) {

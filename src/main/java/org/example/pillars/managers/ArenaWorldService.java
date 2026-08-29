@@ -5,6 +5,7 @@ import org.bukkit.GameRule;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.WorldCreator;
+import org.bukkit.scheduler.BukkitTask;
 import org.example.pillars.PillarsPlugin;
 import org.example.pillars.entities.Arena;
 import org.example.pillars.enums.ArenaRebuildResult;
@@ -16,9 +17,17 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.ArrayDeque;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.List;
 import java.util.UUID;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 
@@ -31,6 +40,11 @@ public final class ArenaWorldService {
     private final ArenaFloorService floorService;
     private final File worldContainer;
     private final File templateWorld;
+    private final ExecutorService fileExecutor;
+    private final Set<PendingActivation> pendingActivations = ConcurrentHashMap.newKeySet();
+    private final Deque<WorldActivation> worldActivations = new ArrayDeque<>();
+    private BukkitTask worldActivationTask;
+    private volatile boolean shuttingDown;
 
     public ArenaWorldService(
             PillarsPlugin plugin,
@@ -42,6 +56,11 @@ public final class ArenaWorldService {
         this.floorService = floorService;
         this.worldContainer = Bukkit.getWorldContainer();
         this.templateWorld = new File(worldContainer, "arena_template");
+        this.fileExecutor = Executors.newSingleThreadExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "pillars-arena-rebuild");
+            thread.setDaemon(true);
+            return thread;
+        });
     }
 
     public boolean isTemplateAvailable() {
@@ -52,41 +71,110 @@ public final class ArenaWorldService {
         return templateWorld.getAbsolutePath();
     }
 
-    public World loadOrCreate(String worldName) {
-        File arenaFolder = new File(worldContainer, worldName);
-        if (!arenaFolder.exists()) {
+    public void loadOrCreateAsync(String worldName, Consumer<World> callback) {
+        if (shuttingDown) return;
+
+        Path worldContainerPath = worldContainer.toPath().toAbsolutePath().normalize();
+        Path arenaFolder;
+        try {
+            arenaFolder = resolveArenaFolder(worldContainerPath, worldName);
+        } catch (IllegalArgumentException e) {
+            plugin.getLogger().log(Level.SEVERE, translations.text(
+                    "logs.arena-reset-invalid-path",
+                    "world", worldName
+            ), e);
+            callback.accept(null);
+            return;
+        }
+
+        if (Files.exists(arenaFolder)) {
+            queueWorldActivation(worldName, callback);
+            return;
+        }
+
+        Path stagingFolder = worldContainerPath.resolve(".pillars-create-" + UUID.randomUUID());
+        executeFileTask(() -> {
             try {
-                copyFolder(templateWorld.toPath(), arenaFolder.toPath());
-                new File(arenaFolder, "uid.dat").delete();
-                new File(arenaFolder, "session.lock").delete();
+                copyFolder(templateWorld.toPath(), stagingFolder);
+                Files.deleteIfExists(stagingFolder.resolve("uid.dat"));
+                Files.deleteIfExists(stagingFolder.resolve("session.lock"));
+                moveFolder(stagingFolder, arenaFolder);
                 plugin.getLogger().info(translations.text("logs.arena-world-created", "world", worldName));
             } catch (IOException | RuntimeException e) {
+                cleanupFolder(stagingFolder, worldName);
                 plugin.getLogger().log(Level.SEVERE, translations.text(
                         "logs.arena-template-copy-failed",
                         "world", worldName,
                         "error", e.getMessage()
                 ), e);
-                return null;
+                scheduleWorldResult(callback, null);
+                return;
             }
+
+            if (!shuttingDown) {
+                Bukkit.getScheduler().runTask(plugin, () -> queueWorldActivation(worldName, callback));
+            }
+        });
+    }
+
+    private void queueWorldActivation(String worldName, Consumer<World> callback) {
+        if (shuttingDown) return;
+        worldActivations.addLast(new WorldActivation(worldName, callback));
+        if (worldActivationTask == null) {
+            worldActivationTask = Bukkit.getScheduler().runTaskTimer(
+                    plugin,
+                    this::activateNextWorld,
+                    1L,
+                    1L
+            );
+        }
+    }
+
+    private void activateNextWorld() {
+        WorldActivation activation = worldActivations.pollFirst();
+        if (activation == null) {
+            cancelWorldActivationTask();
+            return;
         }
 
-        World world = Bukkit.getWorld(worldName);
+        World world = Bukkit.getWorld(activation.worldName());
         if (world == null) {
-            WorldCreator creator = new WorldCreator(worldName);
+            WorldCreator creator = new WorldCreator(activation.worldName());
             creator.generateStructures(false);
             world = creator.createWorld();
         }
 
         if (world == null) {
-            plugin.getLogger().severe(translations.text("logs.world-load-failed", "world", worldName));
-            return null;
+            plugin.getLogger().severe(translations.text(
+                    "logs.world-load-failed",
+                    "world", activation.worldName()
+            ));
+        } else {
+            configure(world);
         }
+        activation.callback().accept(world);
 
-        configure(world);
-        return world;
+        if (worldActivations.isEmpty()) {
+            cancelWorldActivationTask();
+        }
+    }
+
+    private void scheduleWorldResult(Consumer<World> callback, World world) {
+        if (!shuttingDown) {
+            Bukkit.getScheduler().runTask(plugin, () -> callback.accept(world));
+        }
+    }
+
+    private void cancelWorldActivationTask() {
+        if (worldActivationTask != null) {
+            worldActivationTask.cancel();
+            worldActivationTask = null;
+        }
     }
 
     public void rebuild(Arena arena, Consumer<ArenaRebuildResult> callback) {
+        if (shuttingDown) return;
+
         String worldName = arena.getWorldName();
         World world = Bukkit.getWorld(worldName);
 
@@ -142,7 +230,7 @@ public final class ArenaWorldService {
         Path stagingFolder = worldContainerPath.resolve(".pillars-reset-" + operationId);
         Path backupFolder = worldContainerPath.resolve(".pillars-backup-" + operationId);
 
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+        executeFileTask(() -> {
             try {
                 stageArenaReplacement(templateFolder, arenaFolder, stagingFolder, backupFolder);
             } catch (IOException | RuntimeException e) {
@@ -157,21 +245,38 @@ public final class ArenaWorldService {
                 return;
             }
 
-            Bukkit.getScheduler().runTask(plugin, () -> loadRebuiltArena(
-                    arena,
-                    arenaFolder,
-                    backupFolder,
-                    callback
-            ));
+            if (shuttingDown) {
+                rollbackActivatedArena(arenaFolder, backupFolder, worldName);
+                return;
+            }
+
+            PendingActivation pending = new PendingActivation(arenaFolder, backupFolder, worldName);
+            pendingActivations.add(pending);
+            try {
+                Bukkit.getScheduler().runTask(plugin, () -> loadRebuiltArena(arena, pending, callback));
+            } catch (RuntimeException schedulingError) {
+                pendingActivations.remove(pending);
+                rollbackActivatedArena(arenaFolder, backupFolder, worldName);
+                if (!shuttingDown) {
+                    plugin.getLogger().log(Level.SEVERE, translations.text(
+                            "logs.arena-reset-failed",
+                            "world", worldName,
+                            "error", schedulingError.getMessage()
+                    ), schedulingError);
+                }
+            }
         });
     }
 
     private void loadRebuiltArena(
             Arena arena,
-            Path arenaFolder,
-            Path backupFolder,
+            PendingActivation pending,
             Consumer<ArenaRebuildResult> callback
     ) {
+        if (shuttingDown) return;
+
+        Path arenaFolder = pending.arenaFolder();
+        Path backupFolder = pending.backupFolder();
         String worldName = arena.getWorldName();
         List<Location> previousSpawns = new ArrayList<>(arena.getSpawnPoints());
         World newWorld = null;
@@ -189,11 +294,28 @@ public final class ArenaWorldService {
                 newSpawns.add(new Location(newWorld, location.getX(), location.getY(), location.getZ()));
             }
             arena.setSpawnPoints(newSpawns);
-            floorService.generate(arena);
-
-            plugin.getLogger().info(translations.text("logs.arena-reset-completed", "world", worldName));
-            runCallback(callback, ArenaRebuildResult.SUCCESS);
-            Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> cleanupFolder(backupFolder, worldName));
+            World activatedWorld = newWorld;
+            floorService.generate(
+                    arena,
+                    () -> {
+                        pendingActivations.remove(pending);
+                        plugin.getLogger().info(translations.text(
+                                "logs.arena-reset-completed",
+                                "world", worldName
+                        ));
+                        runCallback(callback, ArenaRebuildResult.SUCCESS);
+                        executeFileTask(() -> cleanupFolder(backupFolder, worldName));
+                    },
+                    error -> {
+                        arena.setSpawnPoints(previousSpawns);
+                        plugin.getLogger().log(Level.SEVERE, translations.text(
+                                "logs.arena-reset-failed",
+                                "world", worldName,
+                                "error", error.getMessage()
+                        ), error);
+                        rollbackFailedWorldLoad(activatedWorld, pending, callback);
+                    }
+            );
         } catch (RuntimeException e) {
             arena.setSpawnPoints(previousSpawns);
             plugin.getLogger().log(Level.SEVERE, translations.text(
@@ -201,7 +323,7 @@ public final class ArenaWorldService {
                     "world", worldName,
                     "error", e.getMessage()
             ), e);
-            rollbackFailedWorldLoad(newWorld, arenaFolder, backupFolder, worldName, callback);
+            rollbackFailedWorldLoad(newWorld, pending, callback);
         }
     }
 
@@ -215,26 +337,57 @@ public final class ArenaWorldService {
 
     private void rollbackFailedWorldLoad(
             World newWorld,
-            Path arenaFolder,
-            Path backupFolder,
-            String worldName,
+            PendingActivation pending,
             Consumer<ArenaRebuildResult> callback
     ) {
+        String worldName = pending.worldName();
         if (newWorld != null && !Bukkit.unloadWorld(newWorld, false)) {
             plugin.getLogger().severe(translations.text("logs.arena-reset-unload-failed", "world", worldName));
+            pendingActivations.remove(pending);
             runCallback(callback, ArenaRebuildResult.WORLD_LOAD_FAILED);
             return;
         }
 
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            rollbackActivatedArena(arenaFolder, backupFolder, worldName);
+        executeFileTask(() -> {
+            rollbackActivatedArena(pending.arenaFolder(), pending.backupFolder(), worldName);
+            pendingActivations.remove(pending);
             runCallback(callback, ArenaRebuildResult.WORLD_LOAD_FAILED);
         });
     }
 
     private void runCallback(Consumer<ArenaRebuildResult> callback, ArenaRebuildResult result) {
-        if (callback != null) {
+        if (!shuttingDown && callback != null) {
             Bukkit.getScheduler().runTask(plugin, () -> callback.accept(result));
+        }
+    }
+
+    public void shutdown() {
+        if (shuttingDown) return;
+        shuttingDown = true;
+        cancelWorldActivationTask();
+        worldActivations.clear();
+        fileExecutor.shutdown();
+        try {
+            if (!fileExecutor.awaitTermination(30, TimeUnit.SECONDS)) {
+                plugin.getLogger().warning(translations.text("logs.arena-reset-shutdown-timeout"));
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            plugin.getLogger().log(Level.WARNING, translations.text("logs.arena-reset-shutdown-interrupted"), e);
+        }
+
+        for (PendingActivation pending : new ArrayList<>(pendingActivations)) {
+            rollbackActivatedArena(pending.arenaFolder(), pending.backupFolder(), pending.worldName());
+            pendingActivations.remove(pending);
+        }
+    }
+
+    private void executeFileTask(Runnable task) {
+        if (shuttingDown) return;
+        try {
+            fileExecutor.execute(task);
+        } catch (RejectedExecutionException ignored) {
+            // Shutdown owns rollback for every staged activation still registered.
         }
     }
 
@@ -361,4 +514,8 @@ public final class ArenaWorldService {
             });
         }
     }
+
+    private record PendingActivation(Path arenaFolder, Path backupFolder, String worldName) {}
+
+    private record WorldActivation(String worldName, Consumer<World> callback) {}
 }

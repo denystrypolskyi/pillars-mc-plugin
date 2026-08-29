@@ -1,5 +1,6 @@
 package org.example.pillars.command;
 
+import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -21,6 +22,7 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.UUID;
 
 public class PillarsCommand implements CommandExecutor, TabCompleter {
 
@@ -191,9 +193,18 @@ public class PillarsCommand implements CommandExecutor, TabCompleter {
                     return true;
                 }
 
-                if (itemManager.setCustomItemWeight(rarity, heldItem.getType(), weight)) {
-                    hudManager.sendItemConfigured(player, heldItem.getType(), rarity, weight);
-                } else {
+                UUID playerId = player.getUniqueId();
+                Material material = heldItem.getType();
+                int configuredWeight = weight;
+                if (!itemManager.setCustomItemWeight(rarity, material, weight, saved -> {
+                    Player currentPlayer = Bukkit.getPlayer(playerId);
+                    if (currentPlayer == null) return;
+                    if (saved) {
+                        hudManager.sendItemConfigured(currentPlayer, material, rarity, configuredWeight);
+                    } else {
+                        hudManager.sendItemPoolsSaveFailed(currentPlayer);
+                    }
+                })) {
                     hudManager.sendItemAddUsage(player);
                 }
             }
@@ -231,9 +242,17 @@ public class PillarsCommand implements CommandExecutor, TabCompleter {
                     material = heldItem.getType();
                 }
 
-                if (itemManager.removeItem(rarity, material)) {
-                    hudManager.sendItemRemoved(player, material, rarity);
-                } else {
+                UUID playerId = player.getUniqueId();
+                Material removedMaterial = material;
+                if (!itemManager.removeItem(rarity, material, saved -> {
+                    Player currentPlayer = Bukkit.getPlayer(playerId);
+                    if (currentPlayer == null) return;
+                    if (saved) {
+                        hudManager.sendItemRemoved(currentPlayer, removedMaterial, rarity);
+                    } else {
+                        hudManager.sendItemPoolsSaveFailed(currentPlayer);
+                    }
+                })) {
                     hudManager.sendItemRemoveUsage(player);
                 }
             }

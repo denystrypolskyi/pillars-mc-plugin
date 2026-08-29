@@ -4,6 +4,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
+import org.bukkit.block.data.BlockData;
 import org.bukkit.entity.Player;
 import org.example.pillars.entities.Arena;
 
@@ -76,22 +77,35 @@ public class SpawnManager {
         return blocks;
     }
 
-    public List<Location> cleanupSpawn(Location spawn, int height) {
+    public PreparedPillar prepareSpawnWithSnapshot(Location spawn, int height, Material material) {
         World world = spawn == null ? null : spawn.getWorld();
-        if (world == null) return List.of();
+        if (world == null) return new PreparedPillar(List.of(), Map.of());
 
         int topY = spawn.getBlockY();
         int bottomY = getPillarBottomY(world, topY, height);
         List<Location> blocks = new ArrayList<>();
+        Map<Location, BlockData> originalBlocks = new LinkedHashMap<>();
         for (int y = topY; y >= bottomY; y--) {
             org.bukkit.block.Block block = world.getBlockAt(spawn.getBlockX(), y, spawn.getBlockZ());
-            if (block.getType() == Material.BEDROCK
-                    || block.getType() == Material.SPONGE) {
-                block.setType(Material.AIR, false);
-            }
-            blocks.add(block.getLocation());
+            Location location = block.getLocation();
+            originalBlocks.put(location, block.getBlockData().clone());
+            block.setType(material, false);
+            blocks.add(location);
         }
-        return blocks;
+        return new PreparedPillar(List.copyOf(blocks), Map.copyOf(originalBlocks));
+    }
+
+    public List<Location> restoreSpawn(Map<Location, BlockData> originalBlocks) {
+        if (originalBlocks == null || originalBlocks.isEmpty()) return List.of();
+
+        List<Location> restored = new ArrayList<>();
+        for (Map.Entry<Location, BlockData> entry : originalBlocks.entrySet()) {
+            Location location = entry.getKey();
+            if (location.getWorld() == null) continue;
+            location.getBlock().setBlockData(entry.getValue(), false);
+            restored.add(location);
+        }
+        return restored;
     }
 
     private int getPillarBottomY(World world, int topY, int height) {
@@ -99,4 +113,6 @@ public class SpawnManager {
         int safeHeight = Math.max(1, Math.min(height, worldHeight));
         return Math.max(world.getMinHeight(), topY - safeHeight + 1);
     }
+
+    public record PreparedPillar(List<Location> blocks, Map<Location, BlockData> originalBlocks) {}
 }

@@ -6,6 +6,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Vector;
 import org.example.pillars.GameSession;
+import org.example.pillars.config.StartupSettings;
 import org.example.pillars.enums.GameState;
 import org.example.pillars.managers.HudManager;
 import org.example.pillars.managers.ItemManager;
@@ -51,149 +52,84 @@ public final class GameEventManager {
             GameSession session,
             HudManager hudManager,
             SoundManager soundManager,
-            ItemManager itemManager
+            ItemManager itemManager,
+            StartupSettings.GameEvents settings
     ) {
         this.plugin = plugin;
         this.session = session;
         this.hudManager = hudManager;
         this.soundManager = soundManager;
-        this.automaticEventsEnabled = plugin.getConfig().getBoolean("settings.gameEvents.enabled", true);
+        this.automaticEventsEnabled = settings.initiallyEnabled();
+        this.minimumDelaySeconds = settings.minimumDelaySeconds();
+        this.maximumDelaySeconds = settings.maximumDelaySeconds();
 
-        int configuredMinimumDelay = Math.max(
-                0,
-                plugin.getConfig().getInt("settings.gameEvents.minimumDelaySeconds", 30)
-        );
-        int configuredMaximumDelay = Math.max(
-                configuredMinimumDelay,
-                plugin.getConfig().getInt("settings.gameEvents.maximumDelaySeconds", 60)
-        );
-        this.minimumDelaySeconds = configuredMinimumDelay;
-        this.maximumDelaySeconds = configuredMaximumDelay;
-
-        int smashDurationSeconds = Math.max(
-                1,
-                plugin.getConfig().getInt("settings.gameEvents.superSmashBros.durationSeconds", 20)
-        );
-        double smashKnockbackMultiplier = Math.max(
-                1.0,
-                plugin.getConfig().getDouble("settings.gameEvents.superSmashBros.knockbackMultiplier", 2.5)
-        );
-
-        int cosmicDriftDurationSeconds = Math.max(
-                1,
-                plugin.getConfig().getInt("settings.gameEvents.cosmicDrift.durationSeconds", 25)
-        );
-        double cosmicDriftGravityMultiplier = clampMultiplier(
-                plugin.getConfig().getDouble("settings.gameEvents.cosmicDrift.gravityMultiplier", 0.35)
-        );
-        double cosmicDriftJumpStrengthMultiplier = Math.max(
-                1.0,
-                plugin.getConfig().getDouble("settings.gameEvents.cosmicDrift.jumpStrengthMultiplier", 1.3)
-        );
-        double cosmicDriftFallDamageMultiplier = clampMultiplier(
-                plugin.getConfig().getDouble("settings.gameEvents.cosmicDrift.fallDamageMultiplier", 0.25)
-        );
-
-        int meteorShowerDurationSeconds = Math.max(
-                1,
-                plugin.getConfig().getInt("settings.gameEvents.meteorShower.durationSeconds", 24)
-        );
-        long meteorShowerWavePeriodTicks = Math.max(
-                20L,
-                plugin.getConfig().getLong("settings.gameEvents.meteorShower.wavePeriodTicks", 60L)
-        );
-        int meteorShowerWarningTicks = Math.max(
-                10,
-                plugin.getConfig().getInt("settings.gameEvents.meteorShower.warningTicks", 30)
-        );
-
-        int earthquakeDurationSeconds = Math.max(
-                1,
-                plugin.getConfig().getInt("settings.gameEvents.earthquake.durationSeconds", 24)
-        );
-        long earthquakeWavePeriodTicks = Math.max(
-                20L,
-                plugin.getConfig().getLong("settings.gameEvents.earthquake.wavePeriodTicks", 60L)
-        );
-        int earthquakeWarningTicks = Math.max(
-                10,
-                plugin.getConfig().getInt("settings.gameEvents.earthquake.warningTicks", 30)
-        );
-
-        int huntDurationSeconds = Math.max(
-                1,
-                plugin.getConfig().getInt("settings.gameEvents.huntBegins.durationSeconds", 30)
-        );
-        int huntRewardItemCount = Math.max(
-                1,
-                plugin.getConfig().getInt("settings.gameEvents.huntBegins.rewardItemCount", 2)
-        );
-
-        int hotPotatoDurationSeconds = Math.max(
-                3,
-                plugin.getConfig().getInt("settings.gameEvents.hotPotato.durationSeconds", 15)
-        );
+        StartupSettings.SuperSmashBros smash = settings.superSmashBros();
+        StartupSettings.CosmicDrift cosmicDrift = settings.cosmicDrift();
+        StartupSettings.MeteorShower meteorShower = settings.meteorShower();
+        StartupSettings.Earthquake earthquake = settings.earthquake();
+        StartupSettings.HuntBegins huntBegins = settings.huntBegins();
+        StartupSettings.HotPotato hotPotato = settings.hotPotato();
 
         this.eventFactories = Map.of(
                 "super_smash_bros", () -> new SuperSmashBrosEvent(
                         session,
                         hudManager,
-                        smashDurationSeconds,
-                        smashKnockbackMultiplier
+                        smash.durationSeconds(),
+                        smash.knockbackMultiplier()
                 ),
                 "cosmic_drift", () -> new CosmicDriftEvent(
                         plugin,
                         session,
                         hudManager,
-                        cosmicDriftDurationSeconds,
-                        cosmicDriftGravityMultiplier,
-                        cosmicDriftJumpStrengthMultiplier,
-                        cosmicDriftFallDamageMultiplier
+                        cosmicDrift.durationSeconds(),
+                        cosmicDrift.gravityMultiplier(),
+                        cosmicDrift.jumpStrengthMultiplier(),
+                        cosmicDrift.fallDamageMultiplier()
                 ),
                 "meteor_shower", () -> new MeteorShowerEvent(
                         plugin,
                         session,
                         hudManager,
-                        meteorShowerDurationSeconds,
-                        meteorShowerWavePeriodTicks,
-                        meteorShowerWarningTicks,
-                        Math.max(1, plugin.getConfig().getInt("settings.gameEvents.meteorShower.maxMeteorsPerWave", 3)),
-                        Math.max(1, plugin.getConfig().getInt("settings.gameEvents.meteorShower.playersPerMeteor", 4)),
-                        Math.max(1.0, plugin.getConfig().getDouble("settings.gameEvents.meteorShower.impactRadius", 3.5)),
-                        Math.max(0.0, plugin.getConfig().getDouble("settings.gameEvents.meteorShower.maxDamage", 6.0)),
-                        Math.max(0.0, plugin.getConfig().getDouble("settings.gameEvents.meteorShower.knockbackStrength", 1.15)),
-                        Math.max(4.0, plugin.getConfig().getDouble("settings.gameEvents.meteorShower.spawnHeight", 16.0)),
-                        Math.max(0.0, plugin.getConfig().getDouble("settings.gameEvents.meteorShower.randomOffsetRadius", 3.0))
+                        meteorShower.durationSeconds(),
+                        meteorShower.wavePeriodTicks(),
+                        meteorShower.warningTicks(),
+                        meteorShower.maxMeteorsPerWave(),
+                        meteorShower.playersPerMeteor(),
+                        meteorShower.impactRadius(),
+                        meteorShower.maxDamage(),
+                        meteorShower.knockbackStrength(),
+                        meteorShower.spawnHeight(),
+                        meteorShower.randomOffsetRadius()
                 ),
                 "earthquake", () -> new EarthquakeEvent(
                         plugin,
                         session,
                         hudManager,
-                        earthquakeDurationSeconds,
-                        earthquakeWavePeriodTicks,
-                        earthquakeWarningTicks,
-                        Math.max(20L, plugin.getConfig().getLong("settings.gameEvents.earthquake.missingDurationTicks", 60L)),
-                        Math.max(1, plugin.getConfig().getInt("settings.gameEvents.earthquake.maxBlocksPerWave", 4)),
-                        Math.max(1, plugin.getConfig().getInt("settings.gameEvents.earthquake.playersPerBlock", 3)),
-                        Math.max(0, plugin.getConfig().getInt("settings.gameEvents.earthquake.horizontalSearchRadius", 3))
+                        earthquake.durationSeconds(),
+                        earthquake.wavePeriodTicks(),
+                        earthquake.warningTicks(),
+                        earthquake.missingDurationTicks(),
+                        earthquake.maxBlocksPerWave(),
+                        earthquake.playersPerBlock(),
+                        earthquake.horizontalSearchRadius()
                 ),
                 "hunt_begins", () -> new HuntBeginsEvent(
                         session,
                         hudManager,
                         itemManager,
-                        huntDurationSeconds,
-                        huntRewardItemCount
+                        huntBegins.durationSeconds(),
+                        huntBegins.rewardItemCount()
                 ),
                 "hot_potato", () -> new HotPotatoEvent(
                         plugin,
                         session,
                         hudManager,
-                        hotPotatoDurationSeconds,
-                        Math.max(0L, plugin.getConfig().getLong("settings.gameEvents.hotPotato.passCooldownTicks", 30L)),
-                        Math.max(0.0, plugin.getConfig().getDouble("settings.gameEvents.hotPotato.explosionDamage", 6.0)),
-                        Math.max(0.0, plugin.getConfig().getDouble("settings.gameEvents.hotPotato.horizontalKnockback", 0.45)),
-                        Math.max(0.0, plugin.getConfig().getDouble("settings.gameEvents.hotPotato.verticalKnockback", 1.05)),
-                        Math.max(1, plugin.getConfig().getInt("settings.gameEvents.hotPotato.urgentSeconds", 3))
+                        hotPotato.durationSeconds(),
+                        hotPotato.passCooldownTicks(),
+                        hotPotato.explosionDamage(),
+                        hotPotato.horizontalKnockback(),
+                        hotPotato.verticalKnockback(),
+                        hotPotato.urgentSeconds()
                 )
         );
         this.randomEventIds = eventFactories.keySet().stream()
@@ -202,32 +138,21 @@ public final class GameEventManager {
         this.antiRepeatHistorySize = Math.min(
                 Math.max(
                         0,
-                        plugin.getConfig().getInt("settings.gameEvents.antiRepeatHistorySize", 2)
+                        settings.antiRepeatHistorySize()
                 ),
                 Math.max(0, randomEventIds.size() - 1)
         );
 
-        int effectDurationTicks = Math.max(
-                1,
-                plugin.getConfig().getInt("settings.gameEvents.lastBreath.effectDurationTicks", 40)
-        );
-        long effectPeriodTicks = Math.max(
-                1L,
-                plugin.getConfig().getLong("settings.gameEvents.lastBreath.effectPeriodTicks", 40L)
-        );
-        int effectAmplifier = Math.max(
-                0,
-                plugin.getConfig().getInt("settings.gameEvents.lastBreath.effectAmplifier", 1)
-        );
+        StartupSettings.LastBreath lastBreath = settings.lastBreath();
 
         this.lastBreathEventFactory = () -> new LastBreathEvent(
                 plugin,
                 session,
                 hudManager,
                 soundManager,
-                effectDurationTicks,
-                effectPeriodTicks,
-                effectAmplifier
+                lastBreath.effectDurationTicks(),
+                lastBreath.effectPeriodTicks(),
+                lastBreath.effectAmplifier()
         );
     }
 
@@ -493,9 +418,5 @@ public final class GameEventManager {
             case "lastbreath" -> "last_breath";
             default -> normalized;
         };
-    }
-
-    private double clampMultiplier(double multiplier) {
-        return Math.max(0.0, Math.min(1.0, multiplier));
     }
 }

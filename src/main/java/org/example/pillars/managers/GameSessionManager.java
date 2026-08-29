@@ -6,6 +6,9 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.example.pillars.entities.Arena;
 import org.example.pillars.GameSession;
+import org.example.pillars.config.StartupSettings;
+import org.example.pillars.config.AsyncYamlWriter;
+import org.example.pillars.config.LuckyBlockSettings;
 import org.example.pillars.enums.ArenaRebuildResult;
 import org.example.pillars.enums.ArenaResetResult;
 import org.example.pillars.enums.GameState;
@@ -14,6 +17,7 @@ import org.example.pillars.gameevents.NextGameEventStatus;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.List;
 import java.util.UUID;
 
 public class GameSessionManager {
@@ -26,8 +30,13 @@ public class GameSessionManager {
     private final TeleportManager teleportManager;
     private final ItemManager itemManager;
     private final ArenaManager arenaManager;
+    private final StartupSettings startupSettings;
+    private final AsyncYamlWriter yamlWriter;
+    private final LuckyBlockOutcomeManager luckyBlockOutcomeManager;
+    private boolean automaticEventsEnabled;
 
     private final Map<String, GameSession> sessions = new HashMap<>();
+    private volatile List<GameSession> placeholderSessions = List.of();
 
     public GameSessionManager(
             JavaPlugin plugin,
@@ -38,7 +47,10 @@ public class GameSessionManager {
             SoundManager soundManager,
             TeleportManager teleportManager,
             ItemManager itemManager,
-            ArenaManager arenaManager
+            ArenaManager arenaManager,
+            StartupSettings startupSettings,
+            AsyncYamlWriter yamlWriter,
+            LuckyBlockOutcomeManager luckyBlockOutcomeManager
     ) {
         this.plugin = plugin;
         this.hudManager = hudManager;
@@ -49,24 +61,53 @@ public class GameSessionManager {
         this.teleportManager = teleportManager;
         this.itemManager = itemManager;
         this.arenaManager = arenaManager;
+        this.startupSettings = startupSettings;
+        this.yamlWriter = yamlWriter;
+        this.luckyBlockOutcomeManager = luckyBlockOutcomeManager;
+        this.automaticEventsEnabled = startupSettings.gameEvents().initiallyEnabled();
+
+        for (Arena arena : arenaManager.getArenas()) {
+            getOrCreateSession(arena);
+        }
     }
 
     public GameSession getOrCreateSession(Arena arena) {
-        return sessions.computeIfAbsent(
+        GameSession session = sessions.computeIfAbsent(
                 arena.getWorldName(),
-                k -> new GameSession(
-                        plugin,
-                        hudManager,
-                        playerManager,
-                        statsManager,
-                        spawnManager,
-                        soundManager,
-                        teleportManager,
-                        itemManager,
-                        arenaManager,
-                        arena
-                )
+                k -> {
+                    GameSession createdSession = new GameSession(
+                            plugin,
+                            hudManager,
+                            playerManager,
+                            statsManager,
+                            spawnManager,
+                            soundManager,
+                            teleportManager,
+                            itemManager,
+                            arenaManager,
+                            arena,
+                            startupSettings.session(),
+                            startupSettings.gameEvents(),
+                            luckyBlockOutcomeManager::cleanupSession
+                    );
+                    createdSession.setAutomaticGameEventsEnabled(automaticEventsEnabled);
+                    return createdSession;
+                }
         );
+        placeholderSessions = List.copyOf(sessions.values());
+        return session;
+    }
+
+    public GameSession.PlaceholderView getPlaceholderView(UUID playerId) {
+        for (GameSession session : placeholderSessions) {
+            GameSession.PlaceholderView view = session.getPlaceholderView(playerId);
+            if (view != null) return view;
+        }
+        return null;
+    }
+
+    public LuckyBlockSettings getLuckyBlockSettings() {
+        return luckyBlockOutcomeManager.getSettings();
     }
 
     public GameSession getSessionByPlayer(Player player) {
@@ -312,13 +353,14 @@ public class GameSessionManager {
     }
 
     public boolean areRandomEventsEnabled() {
-        return plugin.getConfig().getBoolean("settings.gameEvents.enabled", true);
+        return automaticEventsEnabled;
     }
 
     public boolean toggleRandomEvents() {
         boolean enabled = !areRandomEventsEnabled();
+        automaticEventsEnabled = enabled;
         plugin.getConfig().set("settings.gameEvents.enabled", enabled);
-        plugin.saveConfig();
+        yamlWriter.savePluginConfig();
 
         for (GameSession session : sessions.values()) {
             session.setAutomaticGameEventsEnabled(enabled);
@@ -351,5 +393,13 @@ public class GameSessionManager {
             case LOBBY_UNAVAILABLE -> hudManager.sendManualArenaResetLobbyUnavailable(startedBy);
         }
         return result;
+    }
+
+    public void shutdown() {
+        for (GameSession session : sessions.values()) {
+            session.shutdown();
+        }
+        sessions.clear();
+        placeholderSessions = List.of();
     }
 }

@@ -35,16 +35,22 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
     private final HudManager hudManager;
     private final Arena arena;
     private final TranslationManager translations;
+    private final int arenaListPage;
 
     private boolean resetConfirmationPending;
 
     public AdminArenaSettingsMenu(Player player, ArenaManager arenaManager, GameSessionManager gameSessionManager, ItemManager itemManager, HudManager hudManager, Arena arena) {
+        this(player, arenaManager, gameSessionManager, itemManager, hudManager, arena, 0);
+    }
+
+    public AdminArenaSettingsMenu(Player player, ArenaManager arenaManager, GameSessionManager gameSessionManager, ItemManager itemManager, HudManager hudManager, Arena arena, int arenaListPage) {
         this.player = player;
         this.arenaManager = arenaManager;
         this.gameSessionManager = gameSessionManager;
         this.itemManager = itemManager;
         this.hudManager = hudManager;
         this.arena = arena;
+        this.arenaListPage = Math.max(0, arenaListPage);
         this.translations = hudManager.getTranslations();
         this.inventory = Bukkit.createInventory(
                 this,
@@ -249,7 +255,9 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
         if (action == null) return;
 
         if (action.equals("back")) {
-            new AdminArenaListMenu(clicker, arenaManager, gameSessionManager, itemManager, hudManager).open();
+            new AdminArenaListMenu(
+                    clicker, arenaManager, gameSessionManager, itemManager, hudManager, arenaListPage
+            ).open();
             return;
         }
 
@@ -265,7 +273,9 @@ public class AdminArenaSettingsMenu implements InventoryHolder {
         }
 
         if (action.equals("floor")) {
-            new AdminArenaFloorMenu(clicker, arenaManager, gameSessionManager, itemManager, hudManager, arena).open();
+            new AdminArenaFloorMenu(
+                    clicker, arenaManager, gameSessionManager, itemManager, hudManager, arena, arenaListPage
+            ).open();
             return;
         }
 

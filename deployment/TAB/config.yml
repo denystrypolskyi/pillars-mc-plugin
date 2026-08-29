@@ -87,23 +87,26 @@ scoreboard:
   delay-on-join-milliseconds: 0
   scoreboards:
     arena:
-      title: "&6&lChronicle"
+      title: "&6&lCHRONICLE"
       display-condition: "%chronicle_in_arena%=true"
       lines:
         - ""
-        - "&7игрок: &f%player%"
-        - "&7в игре: &f%chronicle_players%&8/&f%chronicle_max_players%"
-        - "&7статус: &f%chronicle_status%"
-        - "&7арена: &6%chronicle_arena%"
+        - "&6◆ &fинформация"
+        - "  &6› &7игрок: &f%player%"
+        - "  &6› &7в игре: &f%chronicle_players%&8/&f%chronicle_max_players%"
+        - "  &6› &7статус: &f%chronicle_status%"
+        - "  &6› &7арена: &6%chronicle_arena%"
         - ""
     lobby:
-      title: "&6&lChronicle"
+      title: "&6&lCHRONICLE"
       lines:
         - ""
-        - "&7игрок: &f%player%"
+        - "&6◆ &fинформация"
+        - "  &6› &7игрок: &f%player%"
         - ""
-        - "&7убийства: &f%chronicle_kills%"
-        - "&7победы: &f%chronicle_winrate_display%"
+        - "&6◆ &fстатистика"
+        - "  &6⚔ &7убийства: &f%chronicle_kills%"
+        - "  &6★ &7победы: &f%chronicle_winrate_display%"
         - ""
 
 # https://github.com/NEZNAMY/TAB/wiki/Feature-guide:-Layout

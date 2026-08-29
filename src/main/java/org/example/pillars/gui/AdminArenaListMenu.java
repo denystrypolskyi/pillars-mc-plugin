@@ -30,14 +30,20 @@ public class AdminArenaListMenu implements InventoryHolder {
     private final ItemManager itemManager;
     private final HudManager hudManager;
     private final TranslationManager translations;
+    private int page;
 
     public AdminArenaListMenu(Player player, ArenaManager arenaManager, GameSessionManager gameSessionManager, ItemManager itemManager, HudManager hudManager) {
+        this(player, arenaManager, gameSessionManager, itemManager, hudManager, 0);
+    }
+
+    public AdminArenaListMenu(Player player, ArenaManager arenaManager, GameSessionManager gameSessionManager, ItemManager itemManager, HudManager hudManager, int requestedPage) {
         this.player = player;
         this.arenaManager = arenaManager;
         this.gameSessionManager = gameSessionManager;
         this.itemManager = itemManager;
         this.hudManager = hudManager;
         this.translations = hudManager.getTranslations();
+        this.page = Math.max(0, requestedPage);
         this.inventory = Bukkit.createInventory(this, MENU_SIZE, translations.text("menus.arena-list.title"));
         buildMenu();
     }
@@ -48,6 +54,8 @@ public class AdminArenaListMenu implements InventoryHolder {
         List<Arena> arenas = arenaManager.getArenas().stream()
                 .sorted(ArenaMenuItemFactory.arenaListOrder())
                 .toList();
+        int pageCount = ArenaMenuItemFactory.arenaPageCount(arenas.size());
+        page = Math.min(page, pageCount - 1);
 
         if (arenas.isEmpty()) {
             inventory.setItem(22, ArenaMenuItemFactory.visualItem(
@@ -59,6 +67,7 @@ public class AdminArenaListMenu implements InventoryHolder {
             ArenaMenuItemFactory.placeArenaItems(
                     inventory,
                     arenas,
+                    page,
                     arena -> ArenaMenuItemFactory.adminArenaItem(
                             arena,
                             gameSessionManager.getSession(arena),
@@ -75,6 +84,29 @@ public class AdminArenaListMenu implements InventoryHolder {
                 List.of(translations.text("menus.common.back-admin-lore")),
                 "back"
         ));
+        if (page > 0) {
+            inventory.setItem(47, pageButton("menus.common.previous-page", "page:" + (page - 1), pageCount));
+        }
+        inventory.setItem(49, ArenaMenuItemFactory.pageItem(
+                Material.PAPER,
+                translations.text("menus.common.page", "current", page + 1, "total", pageCount),
+                translations.text("menus.common.page-lore"),
+                ACTION_KEY,
+                null
+        ));
+        if (page + 1 < pageCount) {
+            inventory.setItem(51, pageButton("menus.common.next-page", "page:" + (page + 1), pageCount));
+        }
+    }
+
+    private ItemStack pageButton(String key, String action, int pageCount) {
+        return ArenaMenuItemFactory.pageItem(
+                Material.ARROW,
+                translations.text(key),
+                translations.text("menus.common.page", "current", page + 1, "total", pageCount),
+                ACTION_KEY,
+                action
+        );
     }
 
     private ItemStack actionItem(Material material, String name, List<String> lore, String action) {
@@ -114,11 +146,25 @@ public class AdminArenaListMenu implements InventoryHolder {
             return;
         }
 
+        if (action.startsWith("page:")) {
+            try {
+                int targetPage = Integer.parseInt(action.substring("page:".length()));
+                new AdminArenaListMenu(
+                        clicker, arenaManager, gameSessionManager, itemManager, hudManager, targetPage
+                ).open();
+            } catch (NumberFormatException ignored) {
+                // Ignore malformed GUI data.
+            }
+            return;
+        }
+
         if (action.equals("edit")) {
             String worldName = meta.getPersistentDataContainer().get(ARENA_KEY, PersistentDataType.STRING);
             Arena arena = arenaManager.getArena(worldName);
             if (arena != null) {
-                new AdminArenaSettingsMenu(clicker, arenaManager, gameSessionManager, itemManager, hudManager, arena).open();
+                new AdminArenaSettingsMenu(
+                        clicker, arenaManager, gameSessionManager, itemManager, hudManager, arena, page
+                ).open();
             }
         }
     }

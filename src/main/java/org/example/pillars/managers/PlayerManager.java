@@ -1,5 +1,6 @@
 package org.example.pillars.managers;
 
+import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -28,13 +29,19 @@ public class PlayerManager {
     private final StatsManager statsManager;
     private final Map<UUID, PlayerStateSnapshot> preMatchStates = new HashMap<>();
 
-    public PlayerManager(JavaPlugin plugin, TeleportManager teleportManager, HudManager hudManager, StatsManager statsManager) {
+    public PlayerManager(
+            JavaPlugin plugin,
+            TeleportManager teleportManager,
+            HudManager hudManager,
+            StatsManager statsManager,
+            String lobbyWorldName
+    ) {
         this.teleportManager = teleportManager;
         this.hudManager = hudManager;
         this.statsManager = statsManager;
         this.translations = hudManager.getTranslations();
         this.actionKey = new NamespacedKey(plugin, "lobby_action");
-        this.lobbyWorldName = plugin.getConfig().getString("settings.lobbyWorldName", "world");
+        this.lobbyWorldName = lobbyWorldName;
     }
 
     public void resetPlayerState(Player player) {
@@ -92,6 +99,16 @@ public class PlayerManager {
     public void releasePlayer(Player player) {
         restorePreMatchState(player, true);
         hudManager.resetScoreboard(player);
+    }
+
+    public void shutdown() {
+        for (UUID playerId : List.copyOf(preMatchStates.keySet())) {
+            Player player = Bukkit.getPlayer(playerId);
+            if (player != null) {
+                releasePlayer(player);
+            }
+        }
+        preMatchStates.clear();
     }
 
     public void prepareSpectatorInventory(Player player) {

@@ -128,7 +128,14 @@ public class AdminHubMenu implements InventoryHolder {
         }
 
         if (action.equals("lucky-blocks")) {
-            new AdminLuckyBlockMenu(clicker, itemManager, hudManager, arenaManager, gameSessionManager).open();
+            new AdminLuckyBlockMenu(
+                    clicker,
+                    itemManager,
+                    hudManager,
+                    arenaManager,
+                    gameSessionManager,
+                    gameSessionManager.getLuckyBlockSettings()
+            ).open();
             return;
         }
 

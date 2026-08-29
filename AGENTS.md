@@ -24,6 +24,7 @@ PillarsMC is a multi-arena Paper minigame plugin. Players occupy generated pilla
 
 - `org.example.pillars`: plugin bootstrap and the per-arena `GameSession` lifecycle coordinator.
 - `command`: `/pillars` and `/p` command routing.
+- `config`: validated startup settings, immutable per-match arena snapshots, explicitly live Lucky Block settings, and coalesced atomic YAML persistence.
 - `entities`: mutable arena configuration and player statistics.
 - `enums`: lifecycle, arena mode, item delivery, floor shape, elimination, and reset result values.
 - `gameevents`: session event orchestration and individual events.
@@ -75,6 +76,7 @@ Do not edit `dependency-reduced-pom.xml`; it is generated Shade output. Do not c
 
 - Treat world, entity, player, inventory, scoreboard, attributes, and scheduler state as main-thread-only unless Paper explicitly documents otherwise.
 - Move large filesystem copies/deletions and other blocking I/O off the main thread. Capture plain immutable input, then return to the main thread before using Bukkit state.
+- Keep arena floor generation behind `ArenaFloorService`'s shared per-tick column budget. Do not bypass the arena availability gate by registering an arena before its world and floor are ready.
 - Store every session/event delayed or repeating task and cancel it idempotently at completion, reset, and disable.
 - Add explicit `onDisable` cleanup for player mutations, attributes, displays/entities, temporary blocks/fluids, borders, tasks, and in-flight resets.
 - Never delete an arena directory unless world unload succeeded and every player has been moved out. A failed reset must remain unavailable and report failure.
@@ -91,7 +93,9 @@ Do not edit `dependency-reduced-pom.xml`; it is generated Shade output. Do not c
 
 - Keep YAML/JSON access behind manager or repository boundaries. Gameplay components should consume validated values.
 - Define whether each configuration value is startup-scoped, session-scoped, match-snapshotted, or live. Reload/update all affected instances consistently.
+- Preserve the current boundaries: `StartupSettings` is loaded once in `onEnable`, `ArenaMatchSettings` is captured at the `RUNNING` transition, `LuckyBlockSettings` is live for subsequent outcomes, and rebuild drafts become active only after successful arena reconstruction.
 - Use atomic file replacement for durable data where practical. Do not report a save as successful when persistence failed.
+- Route runtime `config.yml` and `item-pools.yml` writes through `AsyncYamlWriter`; capture YAML on the main thread and perform only string/file operations on its writer thread.
 - Log exceptions with context and stack traces. Avoid broad catches unless a boundary must contain arbitrary failure.
 - Use the plugin logger, Russian player-facing messages in `messages_ru.yml`, and configurable gameplay values instead of standard output or hardcoded user-facing text.
 

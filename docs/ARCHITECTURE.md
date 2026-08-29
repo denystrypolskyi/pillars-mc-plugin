@@ -4,7 +4,7 @@ This document describes the implementation in the current working tree. It is de
 
 ## High-level architecture
 
-The plugin is a single Paper plugin with one configured world per arena and one lazily created in-memory `GameSession` per arena.
+The plugin is a single Paper plugin with one configured world and at most one in-memory `GameSession` per ready arena. Startup arena preparation is asynchronous, so a session may be created on first access after its arena becomes available.
 
 ```text
 /pillars command       Bukkit/Paper events        Inventory GUI clicks
@@ -24,7 +24,7 @@ The plugin is a single Paper plugin with one configured world per arena and one 
        Paper world/player API       YAML/JSON + Paper API
 ```
 
-Most collaborators are constructed in `PillarsPlugin.onEnable()` and passed explicitly. There is no global service registry. Each `GameSession` constructs narrow per-session boundaries from those shared managers. Lucky Block effect state is plugin-wide but explicitly owned by `LuckyBlockEffectService` and keyed by sessions, entity UUIDs, and block locations.
+Most collaborators are constructed in `PillarsPlugin.onEnable()` and passed explicitly. There is no global service registry. `StartupSettings` validates and captures startup-scoped values once before managers and sessions are constructed. Each `GameSession` constructs narrow per-session boundaries from those shared managers. Lucky Block effect state is plugin-wide but explicitly owned by `LuckyBlockEffectService` and keyed by sessions, entity UUIDs, block locations, and session-owned task handles.
 
 ## Bootstrap and lifecycle
 
@@ -38,7 +38,7 @@ Registered listeners are:
 - `LuckyBlockListener`
 - `LobbyListener`
 
-There is no `onDisable()` implementation in `PillarsPlugin`. Paper cancels plugin-owned scheduler tasks automatically, and `LuckyBlockOutcomeManager` listens for `PluginDisableEvent`, but sessions, players, borders, event modifiers, and in-flight arena reset work do not have a central shutdown path.
+`PillarsPlugin.onDisable()` coordinates shutdown through retained manager fields. It first stops sessions and restores their temporary player/world state, then clears Lucky Block effects, restores any remaining player snapshots, drains/rolls back arena rebuild work, and finally flushes statistics persistence.
 
 ## Component responsibilities
 
@@ -46,12 +46,12 @@ There is no `onDisable()` implementation in `PillarsPlugin`. Paper cancels plugi
 
 - Owns application construction and listener/command registration.
 - Detects PlaceholderAPI and TAB.
-- Does not retain the manager graph in fields or coordinate shutdown.
+- Retains the shutdown-critical manager graph and closes it in dependency order from `onDisable()`.
 
 ### `GameSessionManager`
 
 - Owns `Map<String, GameSession>` keyed by arena world name.
-- Creates sessions lazily, routes join/leave/force-start/event/admin-reset requests, finds a player's session by scanning sessions, and chooses quick-join targets. Join/spectate transfers validate the destination before removing source membership.
+- Creates sessions for arenas already ready when it is constructed and uses `computeIfAbsent` for arenas that finish asynchronous startup preparation later. It routes join/leave/force-start/event/admin-reset requests, finds a player's session by scanning sessions, and chooses quick-join targets. Join/spectate transfers validate the destination before removing source membership.
 - Updates the global automatic-event setting and existing sessions.
 - A session lookup treats active players, eliminated spectators, and admin spectators as members.
 
@@ -63,7 +63,7 @@ The main lifecycle and gameplay coordinator. It owns:
 - active, eliminated-spectator, and admin-spectator UUID sets;
 - occupied spawn locations, pregame freeze locations, damage-credit records, and registered Lucky Block locations;
 - countdown, item distribution, ending, reset, and per-player lobby tasks;
-- match snapshots of game mode and item interval;
+- one `ArenaMatchSettings` snapshot containing game mode, delivery mode, item interval, and border duration;
 - one per-session `GameEventManager` and `SessionWorldBorderController`.
 
 Important operations include joining/removing players, starting/canceling the countdown, starting/ending/resetting a match, eliminating a player, starting/stopping the border controller, manual reset, event control, and Lucky Block registration.
@@ -78,15 +78,24 @@ The coordinator decides transition order but delegates implementation details:
 
 This keeps lifecycle policy in `GameSession` while preventing it from directly implementing presentation, persistent-statistics access, or player/world mutations.
 
-`SessionWorldBorderController` owns border geometry calculation, Bukkit `WorldBorder` mutation, per-tick shrink interpolation, shrink timing exposed to the HUD, the delayed Last Breath handoff, and restoration to the plugin's generic post-match border values. `GameSession` controls only when that subsystem starts and stops.
+`SessionWorldBorderController` owns border geometry calculation, Bukkit `WorldBorder` mutation, per-tick shrink interpolation, shrink timing exposed to the HUD, the delayed Last Breath handoff, and an idempotent snapshot/restore of the world's pre-match border properties. `GameSession` controls only when that subsystem starts and stops.
 
 ### Arena configuration, floors, and worlds
 
-`ArenaManager` owns the arena registry, loads and validates arena configuration, and persists administrator changes. Rebuild-required floor and symmetrized-spawn edits are held in immutable per-arena drafts; the live `Arena` and YAML are updated only after successful replacement-world activation. Failed rebuilds restore the prior live settings and retain the draft for retry. `ArenaManager` delegates Bukkit world and directory work to `ArenaWorldService` and floor rules/block generation to `ArenaFloorService`.
+`ArenaManager` owns the arena registry, loads and validates arena configuration, and persists administrator changes. During startup it does not register an arena until its directory, Bukkit world, and generated floor are ready. Rebuild-required floor and symmetrized-spawn edits are held in immutable per-arena drafts; the live `Arena` and YAML are updated only after successful replacement-world activation. Failed rebuilds restore the prior live settings and retain the draft for retry. `ArenaManager` delegates Bukkit world and directory work to `ArenaWorldService` and floor rules/block generation to `ArenaFloorService`.
 
-`ArenaWorldService` creates missing arena worlds from `arena_template` and owns the rebuild transaction. Reset validates that the target is a direct child of the world container and is not `arena_template`, rejects occupied worlds, requires unload success, stages a template copy, retains the old arena as a backup, activates the replacement, and recreates the Bukkit world. The backup is deleted only after world/floor initialization succeeds, or restored after failure.
+`ArenaWorldService` creates missing arena worlds from `arena_template` and owns the rebuild transaction. Startup template copies run serially on its file executor; completed directories enter a main-thread queue that activates at most one Bukkit world per tick. Reset validates that the target is a direct child of the world container and is not `arena_template`, rejects occupied worlds, requires unload success, stages a template copy, retains the old arena as a backup, activates the replacement, and recreates the Bukkit world. The backup is deleted only after world/floor initialization succeeds, or restored after failure.
+
+`ArenaFloorService` computes floor columns, queues generation jobs, and applies at most `settings.floorColumnsPerTick` columns across all jobs per server tick. Startup arenas remain absent from the registry, and reset sessions remain in `RESETTING`, until their generation callback succeeds.
 
 `Arena` is mutable configuration/domain data: key, world/display name, spawn list/capacity, minimum players, join availability, item cooldown, border duration, game mode, delivery mode, and floor settings.
+
+Configuration lifetime has explicit code boundaries:
+
+- `StartupSettings` is loaded once in `PillarsPlugin.onEnable()` and shared by every session regardless of when asynchronous arena preparation completes. Lifecycle timing, lobby/pillar/border geometry, floor budget, and event mechanics require restart.
+- `ArenaMatchSettings.capture(...)` runs immediately before `RUNNING`. Game mode, delivery mode, item interval, and border duration cannot drift during that match; admin edits apply to the next match.
+- `LuckyBlockSettings` is a live façade over the in-memory Bukkit configuration. Admin changes affect the next selected or executed Lucky Block outcome.
+- Arena join availability and minimum player count are live during pregame. Floor/spawn drafts activate only after a successful rebuild.
 
 Floor generation supports square, square-ring, and per-spawn islands. Liquid floors receive glass support/borders. Arena directories have `uid.dat` and `session.lock` removed after template copy.
 
@@ -94,7 +103,7 @@ Floor generation supports square, square-ring, and per-spawn islands. Liquid flo
 
 `ItemManager` owns rarity chances, item-pool YAML, weighted selection, per-player anti-repeat history, persistent-data tags for delivered items/Lucky Blocks, and inventory delivery. In hotbar mode it removes previously tagged delivered items before refilling empty hotbar slots.
 
-`LuckyBlockListener` registers tagged sponge placement, protects registered blocks from pistons/explosions, suppresses their normal drops/experience, and triggers an outcome after an active player completes vanilla block breaking. Mining speed and tool behavior are therefore supplied by Minecraft rather than a plugin task. `LuckyBlockOutcomeManager` is the registered Bukkit adapter. It delegates weighted category/anti-repeat selection to `LuckyBlockOutcomeSelector` and delegates outcome execution plus temporary fluid/block/entity ownership and cleanup to `LuckyBlockEffectService`.
+`LuckyBlockListener` registers tagged sponge placement, protects registered blocks from pistons/explosions, suppresses their normal drops/experience, and triggers an outcome after an active player completes vanilla block breaking. Mining speed and tool behavior are therefore supplied by Minecraft rather than a plugin task. `LuckyBlockOutcomeManager` is the registered Bukkit adapter and exposes the effect cleanup boundary used by sessions. It delegates weighted category/anti-repeat selection to `LuckyBlockOutcomeSelector` and delegates outcome execution plus temporary fluid/block/entity/task ownership and cleanup to `LuckyBlockEffectService`. The outcome system and admin menu receive the same `LuckyBlockSettings` instance; the GUI neither discovers the plugin statically nor creates a second settings wrapper.
 
 ### Game events
 
@@ -118,7 +127,7 @@ Event tasks are generally tracked by the event classes and stopped through `Game
 - `GameSessionPlayerListener` handles quit, completed cross-world departure, lethal damage, void/floor falls, PvP credit, direct-hit event hooks, movement freeze, and Paper knockback events.
 - `LobbyListener` sends joining players to the lobby without destructive normalization, handles action items, session death/respawn, and basic inventory/drop protection.
 - `GuiListener` identifies plugin menus from the top `InventoryView`, cancels cross-inventory transfer clicks, and rejects drags that touch the plugin-owned top inventory before dispatching valid top-menu clicks.
-- GUI classes implement player arena selection and admin editing of arenas, floors, item rarity/pools, Lucky Block chances, and automatic events.
+- GUI classes implement player arena selection and admin editing of arenas, floors, item rarity/pools, Lucky Block chances, and automatic events. `ArenaMenuItemFactory.arenaDetailsLore(...)` is the single source for arena characteristics shown in both the player selection list and the administrative arena list; only their final action hint differs.
 
 ### Supporting managers
 
@@ -129,11 +138,15 @@ Event tasks are generally tracked by the event classes and stopped through `Game
 - `SessionStatisticsService`: session-specific boundary over persistent statistics operations.
 - `PlayerScoreboardService`: built-in scoreboard creation, per-player scoreboard/team state, updates, and reset. It becomes a no-op renderer when TAB is present.
 - `TranslationManager`: Russian-only YAML loading, bundled Russian fallback merging, placeholders, plural forms, and missing-key warnings. Language selection is not configurable.
-- `StatsManager`: in-memory UUID statistics and whole-file Gson JSON load/save.
+- `StartupSettings`: immutable validated lifecycle and event settings loaded once during enable.
+- `ArenaMatchSettings`: immutable per-match copy of arena mode, delivery, interval, and border duration.
+- `LuckyBlockSettings`: live validated Lucky Block configuration used by runtime outcomes and the admin menu.
+- `AsyncYamlWriter`: coalesces latest YAML snapshots per file, writes them through temporary-file atomic replacement on one daemon file thread, and completes each request with the durable-write result.
+- `StatsManager`: locked in-memory UUID statistics, synchronous Gson JSON loading, and coalesced single-writer asynchronous atomic saves.
 - `SpawnManager`: random unoccupied configured spawn allocation.
 - `TeleportManager`: named-world lobby and arena teleports.
 - `SoundManager`: state/event sound cues.
-- `ChroniclePlaceholderExpansion`: `%chronicle_*%` player stats and arena/session values.
+- `ChroniclePlaceholderExpansion`: `%chronicle_*%` player stats and arena/session values. It reads locked statistics and immutable UUID-keyed session views rather than live Bukkit/session state.
 
 ## Game lifecycle
 
@@ -151,7 +164,7 @@ The pregame countdown runs entirely during `STARTING`; there is no separate coun
 
 ### WAITING
 
-Players may join if the arena is open and below spawn capacity. A spawn is occupied, a bedrock or yellow-glazed-terracotta pillar is created, the player is teleported/frozen, and waiting action items are installed. Reaching the minimum calls `startCountdown(false)`.
+Players may join if the arena is open and below spawn capacity. A spawn is occupied, a bedrock or sponge pillar is created after snapshotting the exact replaced block data, the player is teleported/frozen, and waiting action items are installed. Reaching the minimum calls `startCountdown(false)`.
 
 ### STARTING
 
@@ -159,7 +172,7 @@ A synchronous one-second task announces the countdown. If the player count falls
 
 ### RUNNING
 
-The session snapshots the arena game mode and item interval, re-prepares occupied pillars, increments games played, normalizes players for survival, starts item/Lucky Block distribution, begins border shrink, and schedules random events if enabled.
+The session captures one `ArenaMatchSettings` value containing game mode, item-delivery mode, item interval, and border duration. It then re-prepares occupied pillars, increments games played, normalizes players for survival, starts item/Lucky Block distribution, begins border shrink, and schedules random events if enabled. Later admin changes to those four arena values apply only to the following match.
 
 ### ENDING
 
@@ -197,58 +210,79 @@ An administrator may spectate a running session without joining the active roste
 
 Automatic and manual reset use the same evacuation boundary: administrative spectators are restored, tracked online participants and all current arena-world occupants are returned through normal lobby cleanup, then session state is cleared and rebuilding begins. The world service independently refuses to unload an occupied world, so a missing lobby or unsuccessful teleport cannot proceed into directory replacement.
 
+### Plugin shutdown
+
+Each session cancels all owned lifecycle, distribution, event, border, and Lucky Block outcome tasks; removes that session's tracked entities, fluids, and temporary blocks; restores administrative spectators, active/eliminated participant snapshots, and exact pregame pillar blocks; then clears temporary match state. Global Lucky Block shutdown provides an idempotent fallback for any remaining effect state. Arena shutdown cancels queued floor/world activation, drains filesystem operations, and rolls back staged swaps that have not been activated. YAML and statistics writers then flush their latest pending snapshots.
+
 ## State ownership
 
 | State | Scope | Owner | Lifetime/persistence |
 |---|---|---|---|
 | Live arena configuration | Per arena | `Arena` + `ArenaManager` | YAML; floor/spawns change only after successful rebuild |
 | Pending floor/spawn draft | Per arena | `ArenaManager` | Temporary until successful rebuild or plugin restart |
+| Startup arena preparation | Per configured arena | `ArenaWorldService` + `ArenaFloorService` | Arena unavailable until directory, world, and floor complete |
+| Startup configuration snapshot | Plugin-wide | `StartupSettings` | Immutable from enable until disable |
+| Active arena match settings | Per running match | `GameSession` / `ArenaMatchSettings` | Captured at `RUNNING`, cleared on reset/shutdown |
+| Lucky Block settings | Plugin-wide | `LuckyBlockSettings` backed by Bukkit config | Live; the next outcome observes admin updates |
+| Pending YAML snapshots | Per target file | `AsyncYamlWriter` | Coalesced until atomic background write/shutdown flush |
 | Session lifecycle/roster/tasks | Per arena | `GameSession` | Temporary |
 | Session player/world mutations | Per arena | `SessionPlayerService` | Stateless boundary |
 | Session presentation | Per arena | `SessionPresentationService` | Stateless boundary |
 | Session statistics operations | Per arena | `SessionStatisticsService` | Stateless boundary over `StatsManager` |
 | Pre-match player snapshots | Per player UUID | `PlayerManager` | Temporary; removed on lobby return or disconnect |
-| Border geometry/timing/tasks | Per session | `SessionWorldBorderController` | Temporary; stopped at match end/reset |
+| Original pregame pillar blocks | Per participant UUID/session | `GameSession` + `SpawnManager` | Temporary; restored on pregame leave/shutdown or discarded when a full arena reset owns cleanup |
+| Border geometry/timing/tasks and original border snapshot | Per session | `SessionWorldBorderController` | Temporary; stopped and restored at match end/reset |
 | Event state/tasks/history | Per match/session | `GameEventManager` and event | Temporary |
 | Lucky Block locations | Per session | `GameSession` | Temporary |
 | Lucky outcome anti-repeat history | Global maps keyed by session/player | `LuckyBlockOutcomeSelector` | Temporary |
-| Lucky entities/fluids/temporary blocks | Global maps keyed by session/location/UUID | `LuckyBlockEffectService` | Temporary |
+| Lucky entities/fluids/temporary blocks/delayed tasks | Global maps keyed by session/location/UUID | `LuckyBlockEffectService` | Temporary; removed immediately by per-session cleanup or global shutdown fallback |
 | Item pools/rarity | Plugin-wide | `ItemManager` | YAML |
 | Item anti-repeat history | Per player UUID | `ItemManager` | Memory only |
 | Kills/wins/games | Per player UUID | `StatsManager` | `stats.json` |
 | Translations/missing-key set | Plugin-wide | `TranslationManager` | YAML + memory |
-| GUI viewer/menu state | Per open menu | Inventory holder | Temporary |
+| GUI viewer/menu/page state | Per open menu | Inventory holder | Temporary; arena-list page is retained through nested administrative navigation |
 
 ## Threading and scheduling
 
-Most code and all Bukkit event handling run synchronously. Session countdowns, distribution, event mechanics, delayed Lucky Block outcome dispatch, and player return countdowns use the Bukkit scheduler on the main thread. Lucky Block mining itself is vanilla. `SessionWorldBorderController` owns the main-thread per-tick border interpolation task and delayed Last Breath start.
+Most code and all Bukkit event handling run synchronously. Session countdowns, distribution, event mechanics, delayed Lucky Block outcome cleanup, and player return countdowns use the Bukkit scheduler on the main thread. Every Lucky Block delayed cleanup task is registered to its `GameSession`, unregistered after execution, and canceled by direct session cleanup before reset; Lucky Block mining itself is vanilla. `SessionWorldBorderController` owns the main-thread per-tick border interpolation task and delayed Last Breath start.
 
-Arena reset checks occupants and unloads synchronously. Template staging, directory swapping/rollback, and backup cleanup run asynchronously; world creation and floor generation return to the main thread. Startup arena template copies and floor generation are synchronous. Stats and YAML saves are synchronous, including calls originating from match start, kills/wins, commands, ordinary GUI settings, and successful floor/spawn rebuild commits. Editing a floor/spawn draft itself performs no file I/O.
+`GameSession` publishes immutable placeholder views whenever roster or lifecycle presentation state changes. `GameSessionManager` publishes its session list as an immutable snapshot. PlaceholderAPI/TAB callbacks may therefore run asynchronously without touching Bukkit `Player`, mutable session collections, arena spawn lists, or translation YAML; statistics reads remain protected by `StatsManager`'s lock.
 
-No `CompletableFuture`, database, or HTTP client is present.
+Arena reset checks occupants and unloads synchronously. Startup copies, template staging, directory swapping/rollback, and backup cleanup run on `ArenaWorldService`'s dedicated single-thread executor. Bukkit world creation remains main-thread-only and is limited to one queued startup activation per tick. Floor block mutations also remain on the main thread but share the configured `floorColumnsPerTick` budget across all startup/reset jobs. An arena is unavailable until those steps complete. Shutdown cancels activation/floor queues, waits up to 30 seconds for filesystem work, and rolls back pending reset activations.
+
+Statistics mutations occur under a lock and schedule a coalesced deep snapshot on `StatsManager`'s dedicated single-thread writer. `AsyncYamlWriter` captures YAML strings on the main thread, coalesces repeated writes per target, and performs temporary-file atomic replacement in its own single-thread executor. Statistics/YAML loading and small bundled-resource creation remain synchronous during enable; runtime admin filesystem writes do not block the server thread. Editing a floor/spawn draft itself performs no file I/O.
+
+`CompletableFuture<Boolean>` is used only to return YAML persistence results from the file-writer thread. Bukkit-facing completion handlers are marshalled back to the main server thread. No database or HTTP client is present.
 
 ## Persistence
 
-- `config.yml`: global settings and arena definitions. Loaded during manager/session construction. Live-safe admin settings write synchronously; floor/spawn drafts write only after successful rebuild activation.
-- `item-pools.yml`: common/rare/legendary material weights. Loaded at startup, migrated from legacy config keys if present, and rewritten after admin changes.
+- `config.yml`: global settings and arena definitions. Startup settings are validated once in `PillarsPlugin.onEnable()`. Arena admin settings update the live `Arena`, with match-bound values taking effect on the next match. Lucky Block settings and automatic-event enablement update live. Durable runtime writes are coalesced and atomically replaced by `AsyncYamlWriter`; floor/spawn drafts are queued only after successful rebuild activation.
+- `item-pools.yml`: common/rare/legendary material weights. Loaded once at startup and retained in memory. Migrations/admin edits update runtime maps immediately and queue a coalesced atomic background write. Commands report success only after durable replacement; failures are logged and tell the administrator that the runtime-only change will be lost on restart.
 - `messages_ru.yml`: copied into the plugin data folder, loaded at startup, and backed by the bundled Russian defaults. English is not loaded or supported.
-- `stats.json`: UUID-keyed kills, wins, and games played. Loaded synchronously at enable and rewritten in full for every increment.
+- `stats.json`: UUID-keyed kills, wins, and games played. Loaded synchronously at enable. Mutations are coalesced into full immutable snapshots written asynchronously through `stats.json.tmp`; atomic replacement is used when supported, with replacement fallback, and shutdown flushes pending state.
 - Arena worlds: transient copies of `arena_template`; successful resets discard world changes by replacing the directory.
 
 ## Configuration behavior
 
-Global configuration covers lifecycle timing, border sizing, pillar height, lobby world, rarity/anti-repeat, Lucky Block probabilities/effect lifetimes, and game-event settings. Each arena configures its Russian display name, world name, spawns, join availability, minimum players, item cooldown, border duration, game mode, delivery mode, and floor.
+Global configuration covers lifecycle timing, border sizing, pillar height, floor columns per tick, lobby world, rarity/anti-repeat, Lucky Block probabilities/effect lifetimes, and game-event settings. Each arena configures its Russian display name, world name, spawns, join availability, minimum players, item cooldown, border duration, game mode, delivery mode, and floor.
 
-Configuration lifetime is mixed: some values are captured when managers/sessions are constructed, game mode and interval are snapshotted at match start, and some mutable arena values (notably delivery mode) are read during a running match. There is no general reload command.
+Configuration lifetime is explicit:
+
+- **Startup:** lifecycle delays, lobby world, pillar height, border geometry, and detailed event mechanics are captured by `StartupSettings` and require restart.
+- **Pregame live:** join availability and minimum player count affect subsequent admission/countdown checks.
+- **Next match:** game mode, delivery mode, item interval, and border duration are copied into `ArenaMatchSettings` at the `RUNNING` transition.
+- **Live next operation:** Lucky Block settings, automatic-event enablement, rarity percentages, and item pools affect subsequent outcomes/distributions through their owning managers.
+- **Successful rebuild:** floor and spawn drafts become live and persistent only after replacement-world activation.
+
+There is no general reload command. Editing YAML on disk alone never changes the in-memory configuration; startup-scoped changes require restart.
 
 ## External integrations
 
 - Paper API, including `EntityPushedByEntityAttackEvent` and transient attributes.
-- PlaceholderAPI soft dependency. Identifier: `chronicle`; placeholders include kills, wins, games, win-rate forms, and arena/session status values.
+- PlaceholderAPI soft dependency. Identifier: `chronicle`; placeholders include kills, wins, games, win-rate forms, and arena/session status values. Session values come from immutable snapshots safe for asynchronous consumers such as TAB.
 - TAB soft dependency. `deployment/TAB/config.yml` demonstrates consuming the placeholders. Presence of TAB disables the internal scoreboard.
 - Gson is a direct shaded dependency for `stats.json`.
 
 ## Unclear / Requires Confirmation
 
-- Whether PlaceholderAPI/TAB requests are guaranteed to execute on the primary server thread; the expansion reads mutable session maps without synchronization.
-- Whether switching item-delivery mode during a running match is intended to take effect immediately; game mode is explicitly snapshotted but delivery mode is read live.
+No unresolved integration-threading assumption remains in the current implementation; placeholder callbacks do not require the primary server thread.

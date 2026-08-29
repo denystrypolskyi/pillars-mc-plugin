@@ -2,10 +2,13 @@ package org.example.pillars;
 
 import org.bukkit.*;
 import org.bukkit.entity.Player;
+import org.bukkit.block.data.BlockData;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Vector;
 import org.example.pillars.entities.Arena;
+import org.example.pillars.config.ArenaMatchSettings;
+import org.example.pillars.config.StartupSettings;
 import org.example.pillars.enums.ArenaRebuildResult;
 import org.example.pillars.enums.ArenaResetResult;
 import org.example.pillars.enums.ArenaGameMode;
@@ -31,6 +34,7 @@ public class GameSession {
     private final Map<UUID, Location> frozenPlayers = new HashMap<>();
     private final Map<UUID, DamageCredit> lastDamagerMap = new HashMap<>();
     private final Map<UUID, Location> occupiedSpawns = new HashMap<>();
+    private final Map<UUID, Map<Location, BlockData>> originalPillarBlocks = new HashMap<>();
     private final Set<Location> luckyBlocks = new HashSet<>();
     private final Map<UUID, Location> adminSpectatorPreviousLocations = new HashMap<>();
     private final Map<UUID, GameMode> adminSpectatorPreviousGameModes = new HashMap<>();
@@ -43,6 +47,7 @@ public class GameSession {
     private final JavaPlugin plugin;
     private final GameEventManager gameEventManager;
     private final SessionWorldBorderController worldBorderController;
+    private final Consumer<GameSession> luckyBlockCleanup;
 
     private BukkitTask beginGameCountdownTask;
     private BukkitTask waitingForPlayersTask;
@@ -56,8 +61,8 @@ public class GameSession {
 
     private boolean resetInProgress = false;
     private boolean forceStart = false;
-    private ArenaGameMode activeGameMode;
-    private int activeItemIntervalSeconds;
+    private ArenaMatchSettings activeMatchSettings;
+    private volatile PlaceholderSnapshot placeholderSnapshot;
 
     private final int beginCountdownSeconds;
     private final int endGameLobbyCountdownSeconds;
@@ -76,7 +81,10 @@ public class GameSession {
             TeleportManager teleportManager,
             ItemManager itemManager,
             ArenaManager arenaManager,
-            Arena arena
+            Arena arena,
+            StartupSettings.Session settings,
+            StartupSettings.GameEvents gameEventSettings,
+            Consumer<GameSession> luckyBlockCleanup
     ) {
         this.plugin = plugin;
         this.presentation = new SessionPresentationService(hudManager, soundManager);
@@ -85,24 +93,30 @@ public class GameSession {
         this.itemManager = itemManager;
         this.arenaManager = arenaManager;
         this.arena = arena;
-        this.gameEventManager = new GameEventManager(plugin, this, hudManager, soundManager, itemManager);
+        this.luckyBlockCleanup = luckyBlockCleanup;
+        this.gameEventManager = new GameEventManager(
+                plugin,
+                this,
+                hudManager,
+                soundManager,
+                itemManager,
+                gameEventSettings
+        );
         this.worldBorderController = new SessionWorldBorderController(
                 plugin,
                 arena,
                 gameEventManager,
-                Math.max(1.0, plugin.getConfig().getDouble("settings.borderMinSize", 1.0)),
-                Math.max(1.0, plugin.getConfig().getDouble("settings.borderSpawnPaddingBlocks", 10.0))
+                settings.borderMinimumSize(),
+                settings.borderSpawnPaddingBlocks()
         );
 
-        this.beginCountdownSeconds = Math.max(1, plugin.getConfig().getInt("settings.beginCountdownSeconds", 5));
-        this.endGameLobbyCountdownSeconds = Math.max(1, plugin.getConfig().getInt("settings.endGameLobbyCountdownSeconds", 5));
-        this.endGameSpectatorDelayTicks = Math.max(0L, plugin.getConfig().getLong("settings.endGameSpectatorDelayTicks", 40L));
-        this.arenaResetDelayTicks = Math.max(1L, plugin.getConfig().getLong("settings.arenaResetDelayTicks", 160L));
-        this.spawnPillarHeightBlocks = Math.max(1, Math.min(
-                64,
-                plugin.getConfig().getInt("settings.spawnPillarHeightBlocks", 5)
-        ));
-        this.lobbyWorldName = plugin.getConfig().getString("settings.lobbyWorldName", "world");
+        this.beginCountdownSeconds = settings.beginCountdownSeconds();
+        this.endGameLobbyCountdownSeconds = settings.endGameLobbyCountdownSeconds();
+        this.endGameSpectatorDelayTicks = settings.endGameSpectatorDelayTicks();
+        this.arenaResetDelayTicks = settings.arenaResetDelayTicks();
+        this.spawnPillarHeightBlocks = settings.spawnPillarHeightBlocks();
+        this.lobbyWorldName = settings.lobbyWorldName();
+        publishPlaceholderSnapshot();
     }
 
     public void playerJoin(Player player) {
@@ -170,8 +184,8 @@ public class GameSession {
         lastDamagerMap.remove(uuid);
 
         if (state == GameState.WAITING || state == GameState.STARTING) {
-            Location spawn = occupiedSpawns.remove(uuid);
-            luckyBlocks.removeAll(players.cleanupSpawn(spawn, spawnPillarHeightBlocks));
+            occupiedSpawns.remove(uuid);
+            luckyBlocks.removeAll(players.restoreSpawn(originalPillarBlocks.remove(uuid)));
 
             if (state == GameState.STARTING && activePlayers.size() < getMinPlayers()) {
                 cancelBeginGameCountdownTask();
@@ -331,6 +345,7 @@ public class GameSession {
                 BukkitTask t = endGameCountdownTasks.remove(uuid);
                 if (t != null) t.cancel();
                 spectators.remove(uuid);
+                publishPlaceholderSnapshot();
                 return;
             }
 
@@ -341,6 +356,7 @@ public class GameSession {
                 players.returnToLobby(player, lobbyWorldName);
 
                 spectators.remove(uuid);
+                publishPlaceholderSnapshot();
 
                 BukkitTask t = endGameCountdownTasks.remove(uuid);
                 if (t != null) t.cancel();
@@ -403,6 +419,7 @@ public class GameSession {
             luckyBlocks.addAll(prepared.pillarBlocks());
         }
         occupiedSpawns.put(player.getUniqueId(), prepared.spawn());
+        originalPillarBlocks.put(player.getUniqueId(), prepared.originalBlocks());
         frozenPlayers.put(player.getUniqueId(), prepared.destination());
         return true;
     }
@@ -461,6 +478,28 @@ public class GameSession {
         return resetInProgress;
     }
 
+    public void shutdown() {
+        stopSessionTasks();
+        restoreAdminSpectators();
+
+        for (Map<Location, BlockData> originalBlocks : originalPillarBlocks.values()) {
+            players.restoreSpawn(originalBlocks);
+        }
+
+        Set<UUID> participants = new HashSet<>(activePlayers);
+        participants.addAll(spectators);
+        for (UUID playerId : participants) {
+            Player player = Bukkit.getPlayer(playerId);
+            if (player != null) {
+                players.release(player);
+            }
+        }
+
+        clearSessionState();
+        resetInProgress = false;
+        state = GameState.RESETTING;
+    }
+
     private void resetSession() {
         stopSessionTasks();
         clearSessionState();
@@ -471,6 +510,7 @@ public class GameSession {
         itemManager.clearRecentItems(getAllPlayerIds());
         frozenPlayers.clear();
         activePlayers.clear();
+        publishPlaceholderSnapshot();
         spectators.clear();
         restoreAdminSpectators();
         adminSpectators.clear();
@@ -479,10 +519,11 @@ public class GameSession {
         lastDamagerMap.clear();
         endGameCountdownTasks.clear();
         occupiedSpawns.clear();
+        originalPillarBlocks.clear();
         luckyBlocks.clear();
-        activeGameMode = null;
-        activeItemIntervalSeconds = 0;
+        activeMatchSettings = null;
         forceStart = false;
+        publishPlaceholderSnapshot();
     }
 
     private void stopSessionTasks() {
@@ -492,6 +533,7 @@ public class GameSession {
         cancelEndGameCountdownStartDelayTask();
         cancelArenaResetDelayTask();
         gameEventManager.stop();
+        luckyBlockCleanup.accept(this);
 
         cancelEndGameCountdownTasks();
 
@@ -583,11 +625,13 @@ public class GameSession {
     }
 
     public boolean isLuckyBlocksModeActive() {
-        return state == GameState.RUNNING && activeGameMode == ArenaGameMode.LUCKY_BLOCKS;
+        return state == GameState.RUNNING
+                && activeMatchSettings != null
+                && activeMatchSettings.gameMode() == ArenaGameMode.LUCKY_BLOCKS;
     }
 
     public int getActiveItemIntervalSeconds() {
-        return Math.max(1, activeItemIntervalSeconds);
+        return activeMatchSettings == null ? 1 : activeMatchSettings.itemIntervalSeconds();
     }
 
     public double getEliminationY() {
@@ -633,6 +677,7 @@ public class GameSession {
     }
 
     private void updateArenaHudForAllPlayers() {
+        publishPlaceholderSnapshot();
         presentation.updateArena(
                 getAllPlayerIds(),
                 getParticipantCount(),
@@ -644,6 +689,19 @@ public class GameSession {
 
     public int getParticipantCount() {
         return activePlayers.size() + spectators.size();
+    }
+
+    public PlaceholderView getPlaceholderView(UUID playerId) {
+        PlaceholderSnapshot snapshot = placeholderSnapshot;
+        return snapshot.playerIds().contains(playerId) ? snapshot.view() : null;
+    }
+
+    private void publishPlaceholderSnapshot() {
+        int maxPlayers = arena.getSpawnPoints() == null ? 0 : arena.getSpawnPoints().size();
+        placeholderSnapshot = new PlaceholderSnapshot(
+                Set.copyOf(getAllPlayerIds()),
+                new PlaceholderView(arena.getDisplayName(), getParticipantCount(), maxPlayers, state)
+        );
     }
 
     public void startBeginGameCountdown() {
@@ -688,8 +746,7 @@ public class GameSession {
             counter[0]--;
             if (counter[0] < 0) {
                 statistics.recordGamesPlayed(getActivePlayerIds());
-                activeGameMode = arena.getGameMode();
-                activeItemIntervalSeconds = Math.max(1, arena.getItemCooldownSeconds());
+                activeMatchSettings = ArenaMatchSettings.capture(arena);
                 prepareOccupiedPillarsForGameMode();
                 state = GameState.RUNNING;
                 frozenPlayers.clear();
@@ -707,7 +764,7 @@ public class GameSession {
                     presentation.gameStarted(player);
                 }
 
-                worldBorderController.start();
+                worldBorderController.start(activeMatchSettings.borderShrinkSeconds());
                 if (!forceStart) {
                     presentation.gameStarted(arena);
                 }
@@ -719,10 +776,12 @@ public class GameSession {
 
     private void startItemDistributionTask() {
         if (itemDistributionTask != null) return;
+        if (activeMatchSettings == null) return;
 
         final int interval = getActiveItemIntervalSeconds();
         final int[] counter = {interval};
-        final ItemDeliveryMode[] previousMode = {arena.getItemDeliveryMode()};
+        final ArenaGameMode gameMode = activeMatchSettings.gameMode();
+        final ItemDeliveryMode deliveryMode = activeMatchSettings.itemDeliveryMode();
 
         itemDistributionTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
             for (UUID uuid : activePlayers) {
@@ -732,8 +791,8 @@ public class GameSession {
                     presentation.itemCooldown(
                              player,
                              counter[0],
-                             activeGameMode,
-                             arena.getItemDeliveryMode(),
+                             gameMode,
+                             deliveryMode,
                              worldBorderController.getSecondsUntilNextDecrease(currentBorderSize),
                              getActiveGameEventStatus()
                     );
@@ -744,21 +803,16 @@ public class GameSession {
                 for (UUID uuid : activePlayers) {
                     Player player = Bukkit.getPlayer(uuid);
                     if (player != null) {
-                        ItemDeliveryMode currentMode = arena.getItemDeliveryMode();
-                        if (activeGameMode == ArenaGameMode.LUCKY_BLOCKS) {
+                        if (gameMode == ArenaGameMode.LUCKY_BLOCKS) {
                             itemManager.giveLuckyBlock(player);
-                        } else if (currentMode == ItemDeliveryMode.HOTBAR) {
+                        } else if (deliveryMode == ItemDeliveryMode.HOTBAR) {
                             itemManager.refreshHotbar(player);
                         } else {
-                            if (previousMode[0] == ItemDeliveryMode.HOTBAR) {
-                                itemManager.clearDeliveredItems(player);
-                            }
                             itemManager.giveRandomItem(player);
                         }
                         presentation.itemGiven(player);
                     }
                 }
-                previousMode[0] = arena.getItemDeliveryMode();
             }
 
             counter[0]--;
@@ -767,10 +821,15 @@ public class GameSession {
     }
 
     private void prepareOccupiedPillarsForGameMode() {
+        if (activeMatchSettings == null) return;
         luckyBlocks.clear();
         for (Location spawn : occupiedSpawns.values()) {
-            List<Location> blocks = players.rebuildPillar(spawn, spawnPillarHeightBlocks, activeGameMode);
-            if (activeGameMode == ArenaGameMode.LUCKY_BLOCKS) {
+            List<Location> blocks = players.rebuildPillar(
+                    spawn,
+                    spawnPillarHeightBlocks,
+                    activeMatchSettings.gameMode()
+            );
+            if (activeMatchSettings.gameMode() == ArenaGameMode.LUCKY_BLOCKS) {
                 luckyBlocks.addAll(blocks);
             }
         }
@@ -823,6 +882,7 @@ public class GameSession {
                 restoreAdminSpectator(player);
             }
         }
+        publishPlaceholderSnapshot();
     }
 
     private void restoreAdminSpectator(Player player) {
@@ -842,6 +902,12 @@ public class GameSession {
         }
 
         endGameCountdownTasks.clear();
+    }
+
+    public record PlaceholderView(String arenaName, int participantCount, int maxPlayers, GameState state) {
+    }
+
+    private record PlaceholderSnapshot(Set<UUID> playerIds, PlaceholderView view) {
     }
 
     private void cancelEndGameCountdownStartDelayTask() {

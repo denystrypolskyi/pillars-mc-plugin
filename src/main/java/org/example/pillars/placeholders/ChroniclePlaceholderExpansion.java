@@ -3,7 +3,6 @@ package org.example.pillars.placeholders;
 import me.clip.placeholderapi.expansion.PlaceholderExpansion;
 import org.bukkit.ChatColor;
 import org.bukkit.OfflinePlayer;
-import org.bukkit.entity.Player;
 import org.example.pillars.GameSession;
 import org.example.pillars.entities.PlayerStats;
 import org.example.pillars.enums.GameState;
@@ -14,12 +13,16 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Locale;
+import java.util.EnumMap;
+import java.util.Map;
 
 public final class ChroniclePlaceholderExpansion extends PlaceholderExpansion {
     private final String version;
-    private final TranslationManager translations;
     private final StatsManager statsManager;
     private final GameSessionManager sessionManager;
+    private final Map<GameState, String> stateNames;
+    private final String lobbyState;
+    private final String unknownState;
 
     public ChroniclePlaceholderExpansion(
             org.bukkit.plugin.Plugin plugin,
@@ -28,9 +31,17 @@ public final class ChroniclePlaceholderExpansion extends PlaceholderExpansion {
             GameSessionManager sessionManager
     ) {
         this.version = plugin.getPluginMeta().getVersion();
-        this.translations = translations;
         this.statsManager = statsManager;
         this.sessionManager = sessionManager;
+        EnumMap<GameState, String> localizedStates = new EnumMap<>(GameState.class);
+        localizedStates.put(GameState.WAITING, plain(translations, "scoreboard.state.waiting"));
+        localizedStates.put(GameState.STARTING, plain(translations, "scoreboard.state.starting"));
+        localizedStates.put(GameState.RUNNING, plain(translations, "scoreboard.state.running"));
+        localizedStates.put(GameState.ENDING, plain(translations, "scoreboard.state.ending"));
+        localizedStates.put(GameState.RESETTING, plain(translations, "scoreboard.state.resetting"));
+        this.stateNames = Map.copyOf(localizedStates);
+        this.lobbyState = plain(translations, "scoreboard.state.lobby");
+        this.unknownState = plain(translations, "scoreboard.state.unknown");
     }
 
     @Override
@@ -74,18 +85,15 @@ public final class ChroniclePlaceholderExpansion extends PlaceholderExpansion {
                 break;
         }
 
-        Player player = offlinePlayer.getPlayer();
-        GameSession session = player == null ? null : sessionManager.getSessionByPlayer(player);
+        GameSession.PlaceholderView session = sessionManager.getPlaceholderView(offlinePlayer.getUniqueId());
         return switch (key) {
             case "in_arena" -> Boolean.toString(session != null);
-            case "arena" -> session == null ? "—" : session.getArena().getDisplayName();
-            case "players" -> session == null ? "0" : Integer.toString(session.getParticipantCount());
-            case "max_players" -> session == null || session.getArena().getSpawnPoints() == null
-                    ? "0"
-                    : Integer.toString(session.getArena().getSpawnPoints().size());
+            case "arena" -> session == null ? "—" : session.arenaName();
+            case "players" -> session == null ? "0" : Integer.toString(session.participantCount());
+            case "max_players" -> session == null ? "0" : Integer.toString(session.maxPlayers());
             case "status" -> session == null
-                    ? plain("scoreboard.state.lobby")
-                    : stateName(session.getState());
+                    ? lobbyState
+                    : stateName(session.state());
             default -> null;
         };
     }
@@ -97,17 +105,10 @@ public final class ChroniclePlaceholderExpansion extends PlaceholderExpansion {
     }
 
     private String stateName(GameState state) {
-        if (state == null) return plain("scoreboard.state.unknown");
-        return switch (state) {
-            case WAITING -> plain("scoreboard.state.waiting");
-            case STARTING -> plain("scoreboard.state.starting");
-            case RUNNING -> plain("scoreboard.state.running");
-            case ENDING -> plain("scoreboard.state.ending");
-            case RESETTING -> plain("scoreboard.state.resetting");
-        };
+        return state == null ? unknownState : stateNames.getOrDefault(state, unknownState);
     }
 
-    private String plain(String key) {
+    private static String plain(TranslationManager translations, String key) {
         String value = ChatColor.stripColor(translations.text(key));
         return value == null ? "" : value;
     }

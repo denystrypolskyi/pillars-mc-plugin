@@ -7,6 +7,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.persistence.PersistentDataType;
 import org.example.pillars.entities.Arena;
 import org.example.pillars.enums.GameState;
@@ -25,16 +26,22 @@ public class ArenaMenu implements InventoryHolder {
     private final GameSessionManager sessionManager;
     private final HudManager hudManager;
     private final TranslationManager translations;
+    private int page;
 
     private static final NamespacedKey ARENA_KEY = new NamespacedKey("pillars", "arena_worldname");
     private static final NamespacedKey ACTION_KEY = new NamespacedKey("pillars", "arena_action");
     private static final int MENU_SIZE = 54;
     public ArenaMenu(Player player, ArenaManager arenaManager, GameSessionManager sessionManager, HudManager hudManager) {
+        this(player, arenaManager, sessionManager, hudManager, 0);
+    }
+
+    private ArenaMenu(Player player, ArenaManager arenaManager, GameSessionManager sessionManager, HudManager hudManager, int requestedPage) {
         this.player = player;
         this.arenaManager = arenaManager;
         this.sessionManager = sessionManager;
         this.hudManager = hudManager;
         this.translations = hudManager.getTranslations();
+        this.page = Math.max(0, requestedPage);
 
         this.inventory = Bukkit.createInventory(this, MENU_SIZE, translations.text("menus.arena-selection.title"));
         buildMenu();
@@ -46,6 +53,8 @@ public class ArenaMenu implements InventoryHolder {
         List<Arena> arenas = arenaManager.getArenas().stream()
                 .sorted(ArenaMenuItemFactory.arenaListOrder())
                 .toList();
+        int pageCount = ArenaMenuItemFactory.arenaPageCount(arenas.size());
+        page = Math.min(page, pageCount - 1);
 
         if (arenas.isEmpty()) {
             inventory.setItem(22, ArenaMenuItemFactory.visualItem(
@@ -59,6 +68,7 @@ public class ArenaMenu implements InventoryHolder {
         ArenaMenuItemFactory.placeArenaItems(
                 inventory,
                 arenas,
+                page,
                 arena -> ArenaMenuItemFactory.playerArenaItem(
                         arena,
                         sessionManager.getSession(arena),
@@ -67,7 +77,30 @@ public class ArenaMenu implements InventoryHolder {
                 )
         );
 
+        if (page > 0) {
+            inventory.setItem(45, pageButton("menus.common.previous-page", "page:" + (page - 1), pageCount));
+        }
+        inventory.setItem(48, ArenaMenuItemFactory.pageItem(
+                Material.PAPER,
+                translations.text("menus.common.page", "current", page + 1, "total", pageCount),
+                translations.text("menus.common.page-lore"),
+                ACTION_KEY,
+                null
+        ));
         inventory.setItem(49, ArenaMenuItemFactory.quickJoinItem(ACTION_KEY, translations));
+        if (page + 1 < pageCount) {
+            inventory.setItem(53, pageButton("menus.common.next-page", "page:" + (page + 1), pageCount));
+        }
+    }
+
+    private ItemStack pageButton(String key, String action, int pageCount) {
+        return ArenaMenuItemFactory.pageItem(
+                Material.ARROW,
+                translations.text(key),
+                translations.text("menus.common.page", "current", page + 1, "total", pageCount),
+                ACTION_KEY,
+                action
+        );
     }
 
     public void open() {
@@ -81,6 +114,16 @@ public class ArenaMenu implements InventoryHolder {
 
         String action = event.getCurrentItem().getItemMeta()
                 .getPersistentDataContainer().get(ACTION_KEY, PersistentDataType.STRING);
+
+        if (action != null && action.startsWith("page:")) {
+            try {
+                int targetPage = Integer.parseInt(action.substring("page:".length()));
+                new ArenaMenu(player, arenaManager, sessionManager, hudManager, targetPage).open();
+            } catch (NumberFormatException ignored) {
+                // Ignore malformed GUI data.
+            }
+            return;
+        }
 
         if ("quick-join".equals(action)) {
             Arena arena = sessionManager.findQuickJoinArena();

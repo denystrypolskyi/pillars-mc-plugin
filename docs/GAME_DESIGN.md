@@ -5,7 +5,7 @@ This is a reconstruction of player-visible behavior from the current implementat
 ## Core gameplay loop
 
 1. A player uses `/pillars`, `/p menu`, `/p join <arena>`, `/p quickjoin`, or a lobby compass to choose an arena.
-2. The plugin assigns an unused configured spawn, builds a five-block pillar, teleports the player to its top, freezes them, and gives waiting controls.
+2. The plugin assigns an unused configured spawn, snapshots the blocks it will replace, builds a five-block pillar, teleports the player to its top, freezes them, and gives waiting controls.
 3. Once the arena minimum is reached, a countdown begins. Players may continue joining while it counts down.
 4. At match start, players enter Survival, receive items or Lucky Blocks at the arena interval, the border begins shrinking, and random events may occur.
 5. Lethal damage or falling below the arena elimination height converts a player to Spectator.
@@ -14,6 +14,8 @@ This is a reconstruction of player-visible behavior from the current implementat
 
 The server join handler sends players to the configured lobby and adds lobby controls only to free inventory slots. It does not clear existing inventory or player attributes. Reconnecting does not restore a match position.
 
+Immediately after plugin enable, an arena is hidden from selection until its template directory is ready, its Bukkit world has loaded, and its configured floor has finished batched generation. World directories are prepared serially, at most one queued world is activated per tick, and all floors share the configured column budget. This can make arenas appear progressively rather than freezing one startup tick.
+
 When a player already belongs to another session, the requested join or administrator-spectate destination is validated first. A rejected target leaves the player in their current session; a valid target removes the old membership before completing the new admission.
 
 ## Arena selection and start conditions
@@ -21,14 +23,16 @@ When a player already belongs to another session, the requested join or administ
 An arena is joinable only when:
 
 - `joiningOpen` is true;
-- its session is absent or in `WAITING`/`STARTING`;
+- its session is in `WAITING` or `STARTING`;
 - active players are below the number of configured spawns.
 
 Quick join prefers the joinable waiting/starting session with the most active players. If no populated session qualifies, it chooses the smallest-capacity open arena.
 
+The player arena selector and administrative arena list show the same arena characteristics: capacity, lifecycle status, joining availability, current players, minimum start count, item interval, platform state/material/shape, game mode, and item-delivery mode. Their final action line differs because one joins and the other opens editing. Both lists paginate after 28 arenas; nested administrative editing returns to the originating list page.
+
 The effective minimum is clamped from 2 through arena capacity. All bundled arenas currently use 2. Reaching the minimum starts the configured five-second countdown. If a player leaves and a non-forced countdown drops below the minimum, it is canceled. `/p forcestart` (permission `pillars.forcestart`) starts from `WAITING` without enforcing the minimum, including with one player.
 
-At zero, every occupied spawn pillar is re-prepared for the match mode, player freeze ends, games-played is incremented for active players, item distribution begins immediately, and the border/event systems start.
+At zero, game mode, delivery mode, item interval, and border duration are fixed for the complete match. Every occupied spawn pillar is re-prepared for that match mode, player freeze ends, games-played is incremented for active players, item distribution begins immediately, and the border/event systems start. Admin changes to those four arena values apply to the following match.
 
 ## Arenas, pillars, and floors
 
@@ -88,7 +92,7 @@ Cause labels distinguish void, melee, projectile, explosion, fire, lava, fall, a
 
 At match start the border is centered on the mean configured spawn X/Z. Initial diameter is derived from the maximum spawn distance plus configured padding, with a configured minimum. It shrinks linearly on a per-tick wall-clock calculation to the minimum size over the arena's duration (bundled: 240, 360, or 480 seconds).
 
-When shrink completes, `LastBreathEvent` stops normal events and periodically reapplies Wither II (amplifier 1) to active players. Match end resets the border to a generic 1,000-block border centered at 0,64,0.
+When shrink completes, `LastBreathEvent` stops normal events and periodically reapplies Wither II (amplifier 1) to active players. Match end restores the border center, size, damage settings, and warning settings captured immediately before the match border started.
 
 ## Timed game events
 
@@ -119,7 +123,7 @@ There is no currency or match prize beyond statistics, event rewards, sounds, ti
 
 ### Before/during countdown
 
-The player is removed, their occupied pillar column is cleared, and their pre-match state is restored on voluntary leave. They are then sent to the lobby and receive lobby controls in free slots. Disconnect restores the captured state and original location without applying lobby controls. If the count falls below the minimum, a normal countdown is canceled; a forced countdown continues.
+The player is removed, every block replaced by their occupied pillar is restored to its exact captured block data, and their pre-match state is restored on voluntary leave. They are then sent to the lobby and receive lobby controls in free slots. Disconnect performs the same pillar restoration and restores the captured player state and original location without applying lobby controls. If the count falls below the minimum, a normal countdown is canceled; a forced countdown continues.
 
 ### During a match
 
@@ -135,11 +139,13 @@ Normal exit, match end, and disconnect restore the location and game mode saved 
 
 ## Reset behavior
 
-Match end immediately stops item distribution, border scheduling, and game events; clears damage credit and Lucky Block registrations; converts survivors; and later clears session collections/tasks. Reset requires an empty arena world and successful unload. It stages a fresh `arena_template` copy, retains the old directory as a backup, creates the new world/floor, and deletes the backup only after success. Failure restores the backup where possible and leaves the arena closed in `RESETTING` for an administrator to retry.
+Match end immediately stops item distribution, restores the pre-match world border, stops game events, cancels delayed Lucky Block outcome cleanup, removes the session's tracked Lucky entities/fluids/temporary blocks, clears damage credit and Lucky Block registrations, converts survivors, and later clears session collections/tasks. Reset requires an empty arena world and successful unload. It stages a fresh `arena_template` copy, retains the old directory as a backup, creates the new world/floor, and deletes the backup only after success. Failure restores the backup where possible and leaves the arena closed in `RESETTING` for an administrator to retry.
 
 Match entry snapshots inventory/armor/extra slots, selected slot, effects, health/absorption, food, XP, fire, fall state, velocity, game mode, flight, glow, and location before normalizing the player for gameplay. Normal leave, match return, transfer, reset evacuation, and disconnect restore that snapshot. Health is normalized and restored no higher than the current maximum health.
 
 Both automatic and manual reset return tracked online participants and every player currently in the arena world to the lobby before clearing session membership and rebuilding. This forced evacuation is the fallback when the normal post-match countdown has not completed. If anyone remains in the world, rebuild is refused and the arena stays unavailable in `RESETTING`.
+
+Plugin shutdown cancels session countdown/distribution/ending/event/border work, restores administrative spectators and captured participant state, restores pregame pillar blocks, removes tracked Lucky Block world effects, and reconciles arena rebuild work before statistics are flushed. This is server lifecycle cleanup rather than an additional gameplay transition; sessions are not resumed after re-enable.
 
 ## Configuration affecting gameplay
 
@@ -147,16 +153,16 @@ Both automatic and manual reset return tracked online participants and every pla
 - Arena: spawns/capacity, minimum players, join availability, mode, delivery mode, item interval, border duration.
 - Floor: enabled, shape, material, radius, Y.
 - Border/pillars: minimum border diameter, spawn padding, pillar height.
+- Preparation performance: maximum generated floor columns processed per tick.
 - Items: rarity percentages, rarity pools/weights, anti-repeat length.
 - Lucky Blocks: item/category weights, non-item anti-repeat, fluid/mob duration, TNT fuse, explosion power, block damage.
 - Events: enable flag, delay range, anti-repeat, and the timing/strength values listed under each event.
-- Presentation: Russian messages/display names and the lobby world name. There is no language selector or English fallback.
+- Presentation: Russian messages/display names and the lobby world name. The built-in and bundled TAB scoreboards share the same gold/gray section style, compact field symbols, and indented detail rows. There is no language selector or English fallback.
 
-There is no general runtime reload command. Admin menus persist live-safe selected values immediately, while floor/spawn drafts persist only after successful rebuild. Other systems still capture configuration at different lifecycle points.
+There is no general runtime reload command. Lifecycle, lobby, pillar, border-geometry, and detailed event settings require restart. Join availability and minimum players apply during pregame; game mode, delivery mode, item interval, and border duration apply from the next match; Lucky Block probabilities/effects, item rarity/pools, and automatic-event enablement apply to subsequent operations. Floor/spawn drafts activate only after successful rebuild.
 
 ## Unclear / Requires Confirmation
 
 - Whether one-player forced matches are expected to end immediately. Current code starts one, but winner evaluation is not invoked at start, so it continues until another end trigger.
-- Whether item-delivery changes are intended to affect a running match immediately. Current delivery mode is read live while game mode and interval are snapshotted.
 - Whether same-world administrative teleports away from the playable area should count as leaving. Cross-world moves now remove the player, but the implementation has no configured arena boundary for classifying destinations within the arena world.
 - Whether placing a tagged Lucky Block outside an active Lucky Block match should be prevented. It currently becomes an ordinary sponge.

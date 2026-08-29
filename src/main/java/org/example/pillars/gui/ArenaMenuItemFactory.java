@@ -61,9 +61,34 @@ final class ArenaMenuItemFactory {
     static void placeArenaItems(
             Inventory inventory,
             List<Arena> arenas,
+            int page,
             Function<Arena, ItemStack> itemFactory
     ) {
-        placeIntoSlots(inventory, arenas, itemFactory, ARENA_SLOTS);
+        int start = Math.max(0, page) * ARENA_SLOTS.length;
+        int end = Math.min(arenas.size(), start + ARENA_SLOTS.length);
+        placeIntoSlots(inventory, arenas.subList(start, end), itemFactory, ARENA_SLOTS);
+    }
+
+    static int arenaPageCount(int arenaCount) {
+        return Math.max(1, (arenaCount + ARENA_SLOTS.length - 1) / ARENA_SLOTS.length);
+    }
+
+    static ItemStack pageItem(
+            Material material,
+            String name,
+            String lore,
+            NamespacedKey actionKey,
+            String action
+    ) {
+        ItemStack item = visualItem(material, name, List.of(lore));
+        if (action == null) return item;
+
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.getPersistentDataContainer().set(actionKey, PersistentDataType.STRING, action);
+            item.setItemMeta(meta);
+        }
+        return item;
     }
 
     static ItemStack quickJoinItem(NamespacedKey actionKey, TranslationManager translations) {
@@ -89,60 +114,7 @@ final class ArenaMenuItemFactory {
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
             meta.setDisplayName(view.itemColor() + UiPalette.BOLD + arena.getDisplayName());
-            List<String> lore = new ArrayList<>(List.of(
-                    translations.text(
-                            "arena-view.capacity",
-                            "maximum", view.maxPlayers(),
-                            "players", translations.plural("units.player", view.maxPlayers())
-                    ),
-                    "",
-                    translations.text(
-                            "arena-view.status",
-                            "value", view.stateColor() + view.stateDisplay(translations)
-                    ),
-                    translations.text("arena-view.joining", "value", view.joiningDisplay(translations)),
-                    translations.text(
-                            "arena-view.players",
-                            "current", view.currentPlayers(),
-                            "maximum", view.maxPlayers()
-                    ),
-                    translations.text(
-                            "arena-view.starts-at",
-                            "minimum", arena.getMinPlayers(),
-                            "players", translations.plural("units.player-at", arena.getMinPlayers())
-                    ),
-                    "",
-                    translations.text(
-                            "arena-view.platform",
-                            "value", translations.text("arena-view.platform-state."
-                                    + (arena.isFloorEnabled() ? "enabled" : "disabled"))
-                    )
-            ));
-            if (arena.isFloorEnabled()) {
-                lore.add(translations.text(
-                        "arena-view.platform-material",
-                        "value", translations.displayName(arena.getFloorMaterial().name())
-                ));
-                lore.add(translations.text(
-                        "arena-view.platform-shape",
-                        "value", translations.text(
-                                "menus.arena-floor.shapes." + arena.getFloorShape().configValue()
-                        )
-                ));
-            }
-            lore.add(translations.text(
-                    "arena-view.game-mode",
-                    "value", translations.text(
-                            "arena-view.game-modes." + arena.getGameMode().configValue()
-                    )
-            ));
-            lore.add(translations.text(
-                    "arena-view.item-delivery-mode",
-                    "value", translations.text(
-                            "arena-view.item-delivery-modes."
-                                    + arena.getItemDeliveryMode().configValue()
-                    )
-            ));
+            List<String> lore = arenaDetailsLore(arena, view, translations);
             lore.add("");
             lore.add(view.playerActionLore(translations));
 
@@ -164,37 +136,7 @@ final class ArenaMenuItemFactory {
         ItemStack item = new ItemStack(view.material());
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
-            List<String> lore = new ArrayList<>(List.of(
-                    translations.text(
-                            "arena-view.capacity",
-                            "maximum", view.maxPlayers(),
-                            "players", translations.plural("units.player", view.maxPlayers())
-                    ),
-                    "",
-                    translations.text(
-                            "arena-view.status",
-                            "value", view.stateColor() + view.stateDisplay(translations)
-                    ),
-                    translations.text("arena-view.joining", "value", view.joiningDisplay(translations)),
-                    translations.text(
-                            "arena-view.players",
-                            "current", view.currentPlayers(),
-                            "maximum", view.maxPlayers()
-                    ),
-                    translations.text(
-                            "arena-view.starts-at-capacity",
-                            "minimum", arena.getMinPlayers(),
-                            "maximum", view.maxPlayers(),
-                            "players", translations.plural("units.player-at", view.maxPlayers())
-                    ),
-                    translations.text(
-                            "arena-view.item-cooldown",
-                            "seconds", arena.getItemCooldownSeconds()
-                    )
-            ));
-            if (!arena.isJoiningOpen()) {
-                lore.add(translations.text("arena-view.admin-lock"));
-            }
+            List<String> lore = arenaDetailsLore(arena, view, translations);
             lore.add("");
             lore.add(translations.text("arena-view.edit-action"));
 
@@ -205,6 +147,71 @@ final class ArenaMenuItemFactory {
             item.setItemMeta(meta);
         }
         return item;
+    }
+
+    private static List<String> arenaDetailsLore(
+            Arena arena,
+            ArenaView view,
+            TranslationManager translations
+    ) {
+        List<String> lore = new ArrayList<>(List.of(
+                translations.text(
+                        "arena-view.capacity",
+                        "maximum", view.maxPlayers(),
+                        "players", translations.plural("units.player", view.maxPlayers())
+                ),
+                "",
+                translations.text(
+                        "arena-view.status",
+                        "value", view.stateColor() + view.stateDisplay(translations)
+                ),
+                translations.text("arena-view.joining", "value", view.joiningDisplay(translations)),
+                translations.text(
+                        "arena-view.players",
+                        "current", view.currentPlayers(),
+                        "maximum", view.maxPlayers()
+                ),
+                translations.text(
+                        "arena-view.starts-at",
+                        "minimum", arena.getMinPlayers(),
+                        "players", translations.plural("units.player-at", arena.getMinPlayers())
+                ),
+                translations.text(
+                        "arena-view.item-cooldown",
+                        "seconds", arena.getItemCooldownSeconds()
+                ),
+                "",
+                translations.text(
+                        "arena-view.platform",
+                        "value", translations.text("arena-view.platform-state."
+                                + (arena.isFloorEnabled() ? "enabled" : "disabled"))
+                )
+        ));
+        if (arena.isFloorEnabled()) {
+            lore.add(translations.text(
+                    "arena-view.platform-material",
+                    "value", translations.displayName(arena.getFloorMaterial().name())
+            ));
+            lore.add(translations.text(
+                    "arena-view.platform-shape",
+                    "value", translations.text(
+                            "menus.arena-floor.shapes." + arena.getFloorShape().configValue()
+                    )
+            ));
+        }
+        lore.add(translations.text(
+                "arena-view.game-mode",
+                "value", translations.text(
+                        "arena-view.game-modes." + arena.getGameMode().configValue()
+                )
+        ));
+        lore.add(translations.text(
+                "arena-view.item-delivery-mode",
+                "value", translations.text(
+                        "arena-view.item-delivery-modes." + arena.getItemDeliveryMode().configValue()
+                )
+        ));
+        return lore;
     }
 
     private static void placeIntoSlots(
